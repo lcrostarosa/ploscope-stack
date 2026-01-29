@@ -1,0 +1,122 @@
+name: Performance Testing
+
+on:
+  workflow_run:
+    workflows: ["Unified CI/CD Pipeline"]
+    types:
+      - completed
+    branches: [main, master, develop]
+  workflow_dispatch:
+  schedule:
+    # Run performance tests weekly on Saturdays at 4 AM UTC
+    - cron: '0 4 * * 6'
+
+env:
+  REGISTRY: docker.io
+  IMAGE_NAME: ploscope
+
+jobs:
+  performance:
+    name: Performance Tests
+    runs-on: ${{ vars.GHA_RUNNER }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: src/frontend/package-lock.json
+      - name: Cache Node.js dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            src/frontend/node_modules
+            ~/.npm
+            src/frontend/.next
+            src/frontend/dist
+          key: ${{ runner.os }}-perf-node-${{ hashFiles('src/frontend/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-perf-node-
+      - name: Cache Lighthouse results
+        uses: actions/cache@v4
+        with:
+          path: |
+            src/frontend/lighthouse-results.json
+            ~/.cache/lighthouse
+          key: ${{ runner.os }}-lighthouse-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-lighthouse-
+      - name: Install Node.js dependencies
+        run: |
+          cd src/frontend
+          npm ci
+      - name: Run performance tests
+        env:
+          NODE_ENV: production
+          REACT_APP_API_URL: /api
+          BUILD_ENV: ci
+        run: |
+          cd src/frontend
+          npm run build
+          npx serve -s dist -l 3001 &
+          sleep 10
+          npx lighthouse http://localhost:3001 --output=json --output-path=./lighthouse-results.json || true
+      - name: Upload Lighthouse results
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-results-${{ github.sha }}
+          path: src/frontend/lighthouse-results.json
+          retention-days: 30
+      - name: Create performance summary
+        if: always()
+        run: |
+          echo "## Performance Test Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f "src/frontend/lighthouse-results.json" ]; then
+            echo "### Lighthouse Performance Results" >> $GITHUB_STEP_SUMMARY
+
+            # Extract performance metrics
+            performance_score=$(jq -r '.categories.performance.score * 100' src/frontend/lighthouse-results.json 2>/dev/null || echo "N/A")
+            accessibility_score=$(jq -r '.categories.accessibility.score * 100' src/frontend/lighthouse-results.json 2>/dev/null || echo "N/A")
+            best_practices_score=$(jq -r '.categories."best-practices".score * 100' src/frontend/lighthouse-results.json 2>/dev/null || echo "N/A")
+            seo_score=$(jq -r '.categories.seo.score * 100' src/frontend/lighthouse-results.json 2>/dev/null || echo "N/A")
+
+            echo "**Performance Score:** $performance_score%" >> $GITHUB_STEP_SUMMARY
+            echo "**Accessibility Score:** $accessibility_score%" >> $GITHUB_STEP_SUMMARY
+            echo "**Best Practices Score:** $best_practices_score%" >> $GITHUB_STEP_SUMMARY
+            echo "**SEO Score:** $seo_score%" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+
+            # Check for performance issues
+            if [ "$performance_score" != "N/A" ] && [ "$performance_score" -lt 90 ]; then
+              echo "⚠️ **Performance score is below 90%. Consider optimizing:**" >> $GITHUB_STEP_SUMMARY
+              jq -r '.audits | to_entries[] | select(.value.score != null and .value.score < 0.9) | "- " + .value.title + " (" + (.value.score * 100 | tostring) + "%)"' src/frontend/lighthouse-results.json 2>/dev/null | head -5 >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "✅ **Performance score is good (>90%)**" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+
+            # Extract key metrics
+            fcp=$(jq -r '.audits."first-contentful-paint".numericValue' src/frontend/lighthouse-results.json 2>/dev/null || echo "N/A")
+            lcp=$(jq -r '.audits."largest-contentful-paint".numericValue' src/frontend/lighthouse-results.json 2>/dev/null || echo "N/A")
+            fid=$(jq -r '.audits."max-potential-fid".numericValue' src/frontend/lighthouse-results.json 2>/dev/null || echo "N/A")
+            cls=$(jq -r '.audits."cumulative-layout-shift".numericValue' src/frontend/lighthouse-results.json 2>/dev/null || echo "N/A")
+
+            echo "### Core Web Vitals" >> $GITHUB_STEP_SUMMARY
+            echo "**First Contentful Paint:** ${fcp}ms" >> $GITHUB_STEP_SUMMARY
+            echo "**Largest Contentful Paint:** ${lcp}ms" >> $GITHUB_STEP_SUMMARY
+            echo "**First Input Delay:** ${fid}ms" >> $GITHUB_STEP_SUMMARY
+            echo "**Cumulative Layout Shift:** ${cls}" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Performance test results not available**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "1. Review the Lighthouse results for optimization opportunities" >> $GITHUB_STEP_SUMMARY
+          echo "2. Address any performance issues identified" >> $GITHUB_STEP_SUMMARY
+          echo "3. Monitor performance trends over time" >> $GITHUB_STEP_SUMMARY

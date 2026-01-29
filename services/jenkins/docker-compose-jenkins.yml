@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  # Jenkins for local security testing
+  jenkins:
+    build:
+      context: .
+      dockerfile: Dockerfile.jenkins
+    container_name: plosolver-jenkins-security
+    ports:
+      - "8080:8080"  # Jenkins web interface
+      - "50001:50000"  # Jenkins agent port
+    volumes:
+      - jenkins_data:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock  # For Docker-in-Docker
+      - ${PWD}:/workspace:ro  # Mount current directory for security scans
+      - ./scripts/setup/setup-jenkins-local.sh:/usr/local/bin/setup-jenkins.sh:ro
+      - ./Jenkinsfile:/workspace/Jenkinsfile:ro
+      - ./jenkins-config.xml:/workspace/jenkins-config.xml:ro
+      - ./scripts/testing/test-semgrep-sarif.sh:/workspace/test-semgrep-sarif.sh:ro
+      - ./scripts/operations/security-check.sh:/workspace/security-check.sh:ro
+    environment:
+      - JENKINS_OPTS=--httpPort=8080
+      - JAVA_OPTS=-Djenkins.install.runSetupWizard=false
+      - JENKINS_SLAVE_AGENT_PORT=50000
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - WORKSPACE=/workspace
+      - SECURITY_RESULTS_DIR=/workspace/security-results
+      - SEMGREP_RESULTS=/workspace/semgrep-results.sarif
+      - TRIVY_RESULTS=/workspace/trivy-fs-results.sarif
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/login"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    restart: unless-stopped
+    user: root  # Required for Docker access
+    networks:
+      - jenkins-network
+
+  # Optional: Security tools container for running scans
+  security-tools:
+    image: python:3.11-slim
+    container_name: plosolver-security-tools
+    volumes:
+      - ${PWD}:/workspace:ro
+      - security_results:/workspace/security-results
+    working_dir: /workspace
+    environment:
+      - PYTHONPATH=/workspace/src
+      - PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin
+    command: >
+      bash -c "
+        echo 'Installing security tools...' &&
+        pip install --user semgrep bandit safety pip-audit &&
+        export PATH=\$PATH:\$HOME/.local/bin &&
+        echo 'Security tools installed. Ready for scanning.' &&
+        tail -f /dev/null
+      "
+    networks:
+      - jenkins-network
+    depends_on:
+      - jenkins
+
+volumes:
+  jenkins_data:  # Jenkins persistent data
+  security_results:  # Security scan results
+
+networks:
+  jenkins-network:
+    driver: bridge 

@@ -1,0 +1,67 @@
+# Test Environment Docker Compose Configuration
+# Removed version attribute as it's obsolete in newer Docker Compose versions
+
+services:
+  db:
+    image: postgres:15
+    container_name: plosolver-db-test
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=testuser
+      - POSTGRES_PASSWORD=testpassword
+      - POSTGRES_DB=plosolver
+    profiles:
+      - bootstrap
+    networks:
+      - plo-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U testuser -d plosolver"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  db-migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BUILDKIT_INLINE_CACHE: 1
+    container_name: plosolver-db-migrate-test
+    environment:
+      - DATABASE_URL=postgresql://testuser:testpassword@db:5432/plosolver
+      - POSTGRES_DB=plosolver
+      - POSTGRES_USER=testuser
+      - POSTGRES_PASSWORD=testpassword
+      - POSTGRES_HOST=db
+      - POSTGRES_MIGRATE_HOST=db
+      - PGPASSWORD=testpassword
+      - SCHEMA_USER=
+      - SCHEMA_PASSWORD=
+      - POSTGRES_SCHEMA_USER=
+      - POSTGRES_SCHEMA_PASSWORD=
+      - LOG_LEVEL=DEBUG
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+      - BUILD_ENV=test
+      - RESTART_POLICY=no
+      - VOLUME_MODE=rw
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles:
+      - test
+    restart: "no"
+    networks:
+      - plo-network
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "db", "-U", "testuser", "-d", "plosolver"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+networks:
+  plo-network:
+    driver: bridge
+    name: plosolver-test-network
+

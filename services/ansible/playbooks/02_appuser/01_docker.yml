@@ -1,0 +1,294 @@
+---
+- name: Update apt package cache
+  apt:
+    update_cache: yes
+
+
+
+- name: Ensure ca-certificates and curl are installed
+  apt:
+    name:
+      - ca-certificates
+      - curl
+      - make
+      - jq
+      - postgresql-client-common
+      - postgresql-client
+      - python3
+      - python3-pip
+      - python3-venv
+    state: present
+    update_cache: yes
+  become: yes
+
+- name: Create /etc/apt/keyrings directory
+  file:
+    path: /etc/apt/keyrings
+    state: directory  
+    mode: '0755'
+  become: yes
+
+- name: Download Docker GPG key
+  get_url:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    mode: '0644'
+    force: yes
+  become: yes
+
+- name: Add Docker repository to apt sources
+  shell: |
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+    $(. /etc/os-release && echo \"${UBUNTU_CODENAME:-$VERSION_CODENAME}\") stable" > /etc/apt/sources.list.d/docker.list
+  args:
+    executable: /bin/bash
+  become: yes
+
+- name: Update apt package cache after adding Docker repo
+  apt:
+    update_cache: yes
+  become: yes
+# Install Docker Engine and Docker Compose plugin
+- name: Install Docker Engine and Docker Compose plugin
+  apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-compose-plugin
+    state: present
+    update_cache: yes
+  become: yes
+
+- name: Create docker group
+  group:
+    name: docker
+    state: present
+  become: yes
+
+- name: Create grafana group
+  group:
+    name: grafana
+    gid: 472
+    state: present
+  become: yes
+
+- name: Create prometheus group
+  group:
+    name: prometheus
+    gid: 475
+    state: present
+  become: yes
+
+- name: Create grafana user
+  user:
+    name: grafana
+    uid: 472
+    group: grafana
+    system: yes
+    shell: /bin/false
+    home: /var/lib/grafana
+    create_home: no
+  become: yes
+
+- name: Create prometheus user
+  user:
+    name: prometheus
+    uid: 475
+    group: prometheus
+    system: yes
+    shell: /bin/false
+    home: /var/lib/prometheus
+    create_home: no
+  become: yes
+
+- name: Ensure appuser is in docker, grafana, and prometheus groups
+  user:
+    name: appuser
+    groups: docker,grafana,prometheus
+    append: yes
+  become: yes
+
+- name: Verify appuser is in docker group
+  shell: groups appuser
+  register: appuser_groups
+  changed_when: false
+  become: yes
+
+- name: Display appuser groups
+  debug:
+    msg: "appuser groups: {{ appuser_groups.stdout }}"
+  become: yes
+
+- name: Create Docker daemon configuration
+  copy:
+    dest: /etc/docker/daemon.json
+    content: |
+      {
+        "log-driver": "json-file",
+        "log-opts": {
+          "max-size": "10m",
+          "max-file": "7"
+        },
+        "group": "docker"
+      }
+    mode: '0644'
+  become: yes
+
+- name: Stop Docker service if running
+  systemd:
+    name: docker
+    state: stopped
+  become: yes
+
+- name: Start and enable Docker service
+  systemd:
+    name: docker
+    state: started
+    enabled: yes
+    daemon_reload: yes
+  become: yes
+
+- name: Ensure Docker daemon configuration directory exists
+  file:
+    path: /etc/docker
+    state: directory
+    mode: '0755'
+  become: yes
+
+- name: Restart Docker service to apply configuration
+  systemd:
+    name: docker
+    state: restarted
+    daemon_reload: yes
+  become: yes
+
+- name: Verify Docker service is running
+  systemd:
+    name: docker
+  become: yes
+  register: docker_service_status
+  tags: validate-docker
+
+- name: Fail if Docker service is not running
+  fail:
+    msg: "Docker service failed to start. Status: {{ docker_service_status.status.ActiveState }}"
+  when: docker_service_status.status.ActiveState != "active"
+  tags: validate-docker
+
+- name: Wait for Docker socket to be available
+  wait_for:
+    path: /var/run/docker.sock
+    timeout: 30
+  become: yes
+
+- name: Set Docker socket permissions
+  file:
+    path: /var/run/docker.sock
+    mode: '0660'
+    group: docker
+    owner: root
+  become: yes
+
+- name: Test Docker functionality as appuser
+  become: yes
+  become_user: appuser
+  command: docker ps
+  register: docker_ps_result
+  changed_when: false
+  tags: validate-docker
+
+- name: Test Docker Compose plugin as appuser
+  become: yes
+  become_user: appuser
+  command: docker compose version
+  register: docker_compose_version
+  changed_when: false
+  tags: validate-docker
+
+- name: Display Docker Compose version
+  debug:
+    msg: "Docker Compose version: {{ docker_compose_version.stdout }}"
+  tags: validate-docker
+
+- name: Test Docker Compose functionality
+  become: yes
+  become_user: appuser
+  command: docker compose --help
+  register: docker_compose_help
+  changed_when: false
+  tags: validate-docker
+
+- name: Fail if appuser cannot run docker ps
+  fail:
+    msg: "appuser cannot run docker ps. Error: {{ docker_ps_result.stderr }}"
+  when: docker_ps_result.rc != 0
+  tags: validate-docker
+
+- name: Success validation
+  debug:
+    msg: |
+      ✅ Docker setup validated successfully!
+      - Docker service is running
+      - appuser can run docker ps without sudo
+      - Docker socket permissions are correct
+  tags: validate-docker
+
+# Setup monitoring directories with proper permissions
+- name: Create monitoring data directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: appuser
+    group: "{{ 'grafana' if 'grafana' in item else 'prometheus' if 'prometheus' in item else 'appuser' }}"
+    mode: '0775'
+  loop:
+    - "{{ project_dir }}/data/grafana"
+    - "{{ project_dir }}/data/prometheus"
+    - "{{ project_dir }}/data/postgres"
+    - "{{ project_dir }}/data/redis"
+    - "{{ project_dir }}/data/rabbitmq"
+    - "{{ project_dir }}/logs"
+    - "{{ project_dir }}/backups"
+  become: yes
+  tags: setup-monitoring
+
+- name: Set group write permissions on monitoring directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: 'g+w'
+  loop:
+    - "{{ project_dir }}/data/grafana"
+    - "{{ project_dir }}/data/prometheus"
+  become: yes
+  tags: setup-monitoring
+
+- name: Verify monitoring directory permissions
+  stat:
+    path: "{{ item }}"
+  register: monitoring_dirs
+  loop:
+    - "{{ project_dir }}/data/grafana"
+    - "{{ project_dir }}/data/prometheus"
+  tags: setup-monitoring
+
+- name: Display monitoring directory permissions
+  debug:
+    msg: |
+      Directory: {{ item.stat.path }}
+      Owner: {{ item.stat.pw_name }}
+      Group: {{ item.stat.gr_name }}
+      Mode: {{ item.stat.mode }}
+  loop: "{{ monitoring_dirs.results }}"
+  tags: setup-monitoring
+
+- name: Success validation for monitoring setup
+  debug:
+    msg: |
+      ✅ Monitoring directories setup completed!
+      - Grafana data directory: {{ project_dir }}/data/grafana
+      - Prometheus data directory: {{ project_dir }}/data/prometheus
+      - appuser can manage files, containers can write to directories
+  tags: setup-monitoring

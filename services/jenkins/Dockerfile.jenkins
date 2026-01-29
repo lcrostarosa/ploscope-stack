@@ -1,0 +1,92 @@
+# Jenkins Dockerfile with Security Tools for PLOSolver
+FROM jenkins/jenkins:lts-jdk17
+
+USER root
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    wget \
+    git \
+    python3 \
+    python3-pip \
+    python3-venv \
+    nodejs \
+    npm \
+    docker.io \
+    docker-compose \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python security tools
+RUN pip3 install --user --break-system-packages \
+    semgrep \
+    bandit \
+    safety \
+    pip-audit \
+    flake8 \
+    black \
+    isort
+
+# Install Node.js security tools
+RUN npm install -g --unsafe-perm \
+    npm-audit \
+    eslint \
+    eslint-plugin-security \
+    eslint-plugin-react-hooks
+
+# Install Trivy for container scanning
+RUN curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin v0.28.0
+
+# Create security tools directory
+RUN mkdir -p /opt/security-tools && \
+    mkdir -p /workspace/security-results
+
+# Copy security scripts
+COPY scripts/setup/setup-jenkins-local.sh /usr/local/bin/setup-jenkins.sh
+COPY scripts/testing/test-semgrep-sarif.sh /usr/local/bin/test-semgrep-sarif.sh
+COPY scripts/operations/security-check.sh /usr/local/bin/security-check.sh
+COPY Jenkinsfile /workspace/Jenkinsfile
+COPY jenkins-config.xml /workspace/jenkins-config.xml
+
+# Make scripts executable
+RUN chmod +x /usr/local/bin/setup-jenkins.sh && \
+    chmod +x /usr/local/bin/test-semgrep-sarif.sh && \
+    chmod +x /usr/local/bin/security-check.sh
+
+# Set up Jenkins configuration
+COPY jenkins-config.xml /var/jenkins_home/jobs/plosolver-security-analysis/config.xml
+
+# Create Jenkins plugins directory and install required plugins
+RUN mkdir -p /var/jenkins_home/plugins && \
+    cd /var/jenkins_home/plugins && \
+    wget -O workflow-aggregator.hpi https://updates.jenkins.io/latest/workflow-aggregator.hpi && \
+    wget -O git.hpi https://updates.jenkins.io/latest/git.hpi && \
+    wget -O credentials-binding.hpi https://updates.jenkins.io/latest/credentials-binding.hpi && \
+    wget -O timestamper.hpi https://updates.jenkins.io/latest/timestamper.hpi && \
+    wget -O ws-cleanup.hpi https://updates.jenkins.io/latest/ws-cleanup.hpi && \
+    wget -O pipeline-stage-view.hpi https://updates.jenkins.io/latest/pipeline-stage-view.hpi && \
+    wget -O blueocean.hpi https://updates.jenkins.io/latest/blueocean.hpi
+
+# Set environment variables
+ENV PATH="/root/.local/bin:$PATH"
+ENV PYTHONPATH="/workspace/src"
+ENV WORKSPACE="/workspace"
+ENV SECURITY_RESULTS_DIR="/workspace/security-results"
+ENV SEMGREP_RESULTS="/workspace/semgrep-results.sarif"
+ENV TRIVY_RESULTS="/workspace/trivy-fs-results.sarif"
+
+# Create Jenkins user and set permissions
+RUN usermod -a -G docker jenkins && \
+    chown -R jenkins:jenkins /var/jenkins_home && \
+    chown -R jenkins:jenkins /workspace
+
+# Switch back to jenkins user
+USER jenkins
+
+# Expose ports
+# 50000 is internal Jenkins agent port, mapped to 50001 externally
+EXPOSE 8080 50000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=5 \
+    CMD curl -f http://localhost:8080/login || exit 1 

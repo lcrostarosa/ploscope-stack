@@ -1,0 +1,5 @@
+# Poetry configuration for Nexus repositories
+# Note: Source configurations are now in pyproject.toml to avoid conflicts
+[virtualenvs]
+create = true
+in-project = true

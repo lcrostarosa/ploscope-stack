@@ -1,0 +1,101 @@
+name: Docker Build and Push
+
+on:
+  workflow_call:
+    inputs:
+      registry:
+        description: Container registry (e.g. ghcr.io or docker.io)
+        required: false
+        type: string
+        default: docker.io
+      namespace:
+        description: Registry namespace/org (e.g. ploscope)
+        required: false
+        type: string
+        default: ploscope
+      tag:
+        description: Tag to apply to all built images
+        required: false
+        type: string
+        default: auto-tag
+      builds:
+        description: >
+          Array of build definitions (as a JSON string).
+          Example syntax:
+          - name: frontend
+            context: ./frontend
+            dockerfile: ./frontend/Dockerfile
+            platforms: linux/amd64,linux/arm64
+            build-args: NODE_ENV=production
+          - name: backend
+            context: ./backend
+        required: true
+        type: string
+      push:
+        description: Push images to registry
+        required: false
+        type: boolean
+        default: true
+    secrets:
+      REGISTRY_USERNAME:
+        required: false
+      REGISTRY_PASSWORD:
+        required: false
+
+jobs:
+  build-amd:
+    name: Build ${{ matrix.build.name }}
+    runs-on: ${{ vars.GHA_RUNNER }}
+    strategy:
+      fail-fast: false
+      matrix:
+        build: ${{ fromJson(inputs.builds) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ inputs.registry }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      - name: Set tag
+        if: ${{ inputs.tag == 'auto-tag' }}
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ inputs.registry }}/${{ inputs.namespace }}/${{ matrix.build.name }}
+          tags: |
+            type=raw,value=PR-${{ github.event.pull_request.number }},enable=${{ github.event_name == 'pull_request' }}
+            type=raw,value=latest-${{ github.event.pull_request.number }},enable=${{ github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/') || startsWith(github.ref, 'refs/heads/') || github.ref == 'refs/heads/master'}}
+            type=raw,value=staging,enable=${{ github.ref == 'refs/heads/master' }}
+            type=raw,value=master,enable=${{ github.ref == 'refs/heads/master' }}
+            type=raw,value=production,enable=${{ github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/') }}
+            type=semver,pattern={{version}},enable=${{ startsWith(github.ref, 'refs/tags/') }}
+
+      - name: Build and push AMD64
+        if: ${{ contains(matrix.build.platforms, 'amd64') }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.build.context }}
+          file: ${{ matrix.build.dockerfile || format('{0}/{1}', matrix.build.context, 'Dockerfile') }}
+          push: ${{ inputs.push }}
+          platforms: linux/amd64
+          tags: ${{ steps.meta.outputs.tags }}
+          build-args: ${{ matrix.build['build-args'] || '' }}
+      
+      # - name: Build and push ARM64
+      #   if: ${{ contains(matrix.build.platforms, 'arm64') }}
+      #   uses: docker/build-push-action@v6
+      #   with:
+      #     context: ${{ matrix.build.context }}
+      #     file: ${{ matrix.build.dockerfile || format('{0}/{1}', matrix.build.context, 'Dockerfile') }}
+      #     push: ${{ inputs.push }}
+      #     platforms: linux/arm64
+      #     tags: ${{ inputs.registry }}/${{ inputs.namespace }}/${{ matrix.build.name }}:${{ inputs.tag }}
+      #     build-args: ${{ matrix.build['build-args'] || '' }}

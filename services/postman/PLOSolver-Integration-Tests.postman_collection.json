@@ -1,0 +1,524 @@
+{
+	"info": {
+		"_postman_id": "plosolver-integration-tests",
+		"name": "PLOSolver Integration Tests",
+		"description": "Integration tests for PLOSolver API endpoints",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Health Check",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Status code is 200\", function () {",
+							"    pm.response.to.have.status(200);",
+							"});",
+							"",
+							"pm.test(\"Response time is less than 2000ms\", function () {",
+							"    pm.expect(pm.response.responseTime).to.be.below(2000);",
+							"});",
+							"",
+							"pm.test(\"Response has required fields\", function () {",
+							"    const responseJson = pm.response.json();",
+							"    pm.expect(responseJson).to.have.property('status');",
+							"    pm.expect(responseJson).to.have.property('service');",
+							"    pm.expect(responseJson).to.have.property('database');",
+							"    pm.expect(responseJson).to.have.property('rabbitmq');",
+							"    pm.expect(responseJson).to.have.property('timestamp');",
+							"    pm.expect(responseJson).to.have.property('version');",
+							"});",
+							"",
+							"pm.test(\"Service name is correct\", function () {",
+							"    const responseJson = pm.response.json();",
+							"    pm.expect(responseJson.service).to.eql('plosolver-backend');",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/api/health",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"health"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "User Registration",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"// Generate unique email with timestamp",
+							"const timestamp = Date.now();",
+							"const uniqueEmail = `newman-test-${timestamp}@example.com`;",
+							"const uniqueUsername = `newmantestuser${timestamp}`;",
+							"",
+							"// Update request body with unique values",
+							"const requestBody = JSON.parse(pm.request.body.raw);",
+							"requestBody.email = uniqueEmail;",
+							"requestBody.username = uniqueUsername;",
+							"pm.request.body.raw = JSON.stringify(requestBody, null, 2);",
+							"",
+							"// Store unique values for later use",
+							"pm.environment.set('unique_email', uniqueEmail);",
+							"pm.environment.set('unique_username', uniqueUsername);"
+						],
+						"type": "text/javascript"
+					}
+				},
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Status code is 201 or 409 (user already exists)\", function () {",
+							"    pm.expect(pm.response.code).to.be.oneOf([201, 409]);",
+							"});",
+							"",
+							"pm.test(\"Response has user data or error message\", function () {",
+							"    const responseJson = pm.response.json();",
+							"    if (pm.response.code === 201) {",
+							"        pm.expect(responseJson).to.have.property('user');",
+							"        pm.expect(responseJson.user).to.have.property('email');",
+							"        pm.expect(responseJson.user.email).to.eql(pm.environment.get('unique_email'));",
+							"    } else if (pm.response.code === 409) {",
+							"        pm.expect(responseJson).to.have.property('error');",
+							"    }",
+							"});",
+							"",
+							"// Store user data for later tests if registration was successful",
+							"if (pm.response.code === 201) {",
+							"    const responseJson = pm.response.json();",
+							"    pm.environment.set('user_id', responseJson.user.id);",
+							"    pm.environment.set('user_email', responseJson.user.email);",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"email\": \"newman-test@example.com\",\n    \"username\": \"newmantestuser\",\n    \"password\": \"Test_password1!\",\n    \"first_name\": \"Newman\",\n    \"last_name\": \"Test\",\n    \"accept_terms\": true\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/auth/register",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"auth",
+						"register"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "User Login",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"// Use the unique email for login",
+							"const uniqueEmail = pm.environment.get('unique_email');",
+							"if (uniqueEmail) {",
+							"    const requestBody = JSON.parse(pm.request.body.raw);",
+							"    requestBody.email = uniqueEmail;",
+							"    pm.request.body.raw = JSON.stringify(requestBody, null, 2);",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				},
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Status code is 200\", function () {",
+							"    pm.response.to.have.status(200);",
+							"});",
+							"",
+							"pm.test(\"Response has access token\", function () {",
+							"    const responseJson = pm.response.json();",
+							"    pm.expect(responseJson).to.have.property('access_token');",
+							"    pm.expect(responseJson.access_token).to.be.a('string');",
+							"    pm.expect(responseJson.access_token.length).to.be.greaterThan(0);",
+							"});",
+							"",
+							"// Store access token for authenticated requests",
+							"if (pm.response.code === 200) {",
+							"    const responseJson = pm.response.json();",
+							"    pm.environment.set('access_token', responseJson.access_token);",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"email\": \"newman-test@example.com\",\n    \"password\": \"Test_password1!\"\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/auth/login",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"auth",
+						"login"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Submit Spot Simulation Job",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Status code is 201\", function () {",
+							"    pm.response.to.have.status(201);",
+							"});",
+							"",
+							"pm.test(\"Response has job data\", function () {",
+							"    const responseJson = pm.response.json();",
+							"    pm.expect(responseJson).to.have.property('job');",
+							"    pm.expect(responseJson.job).to.have.property('id');",
+							"    pm.expect(responseJson.job).to.have.property('status');",
+							"    pm.expect(responseJson.job.status).to.be.oneOf(['QUEUED', 'PROCESSING', 'COMPLETED']);",
+							"});",
+							"",
+							"pm.test(\"Response has credits info\", function () {",
+							"    const responseJson = pm.response.json();",
+							"    pm.expect(responseJson).to.have.property('credits_info');",
+							"});",
+							"",
+							"// Store job ID for later tests",
+							"if (pm.response.code === 201) {",
+							"    const responseJson = pm.response.json();",
+							"    pm.environment.set('job_id', responseJson.job.id);",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"top_board\": [\"As\", \"Ks\", \"Qs\"],\n    \"bottom_board\": [\"2s\", \"3s\"],\n    \"players\": [[\"Ah\", \"Kh\", \"Qh\", \"Jh\"]],\n    \"simulation_runs\": 1000,\n    \"name\": \"Postman Test Spot\"\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/spots/simulate",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"spots",
+						"simulate"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get Job Status",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Status code is 200\", function () {",
+							"    pm.response.to.have.status(200);",
+							"});",
+							"",
+							"pm.test(\"Response has job data\", function () {",
+							"    const responseJson = pm.response.json();",
+							"    pm.expect(responseJson).to.have.property('job');",
+							"    pm.expect(responseJson.job).to.have.property('id');",
+							"    pm.expect(responseJson.job.id).to.eql(pm.environment.get('job_id'));",
+							"    pm.expect(responseJson.job).to.have.property('status');",
+							"});",
+							"",
+							"pm.test(\"Job status is valid\", function () {",
+							"    const responseJson = pm.response.json();",
+							"    const validStatuses = ['QUEUED', 'PROCESSING', 'COMPLETED', 'FAILED', 'CANCELLED'];",
+							"    pm.expect(responseJson.job.status).to.be.oneOf(validStatuses);",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/jobs/{{job_id}}",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"jobs",
+						"{{job_id}}"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get Recent Jobs",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Status code is 200\", function () {",
+							"    pm.response.to.have.status(200);",
+							"});",
+							"",
+							"pm.test(\"Response has recent_jobs array\", function () {",
+							"    const responseJson = pm.response.json();",
+							"    pm.expect(responseJson).to.have.property('recent_jobs');",
+							"    pm.expect(responseJson.recent_jobs).to.be.an('array');",
+							"});",
+							"",
+							"pm.test(\"Recent jobs array contains our test job\", function () {",
+							"    const responseJson = pm.response.json();",
+							"    const jobId = pm.environment.get('job_id');",
+							"    if (jobId && jobId !== '') {",
+							"        const jobIds = responseJson.recent_jobs.map(job => job.id);",
+							"        pm.expect(jobIds).to.include(jobId);",
+							"    } else {",
+							"        pm.test.skip(\"Job ID not available, skipping test\");",
+							"    }",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/jobs/recent",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"jobs",
+						"recent"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Submit Solver Analysis Job",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Status code is 201\", function () {",
+							"    pm.response.to.have.status(201);",
+							"});",
+							"",
+							"pm.test(\"Response has job data\", function () {",
+							"    const responseJson = pm.response.json();",
+							"    pm.expect(responseJson).to.have.property('job');",
+							"    pm.expect(responseJson.job).to.have.property('id');",
+							"    pm.expect(responseJson.job).to.have.property('status');",
+							"});",
+							"",
+							"// Store solver job ID for later tests",
+							"if (pm.response.code === 201) {",
+							"    const responseJson = pm.response.json();",
+							"    pm.environment.set('solver_job_id', responseJson.job.id);",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"players\": [\n        {\"cards\": [\"As\", \"Ks\", \"Qh\", \"Jd\"]},\n        {\"cards\": [\"Ac\", \"Kc\", \"Qc\", \"Jc\"]}\n    ],\n    \"board\": [\"2s\", \"3h\", \"4d\"],\n    \"pot_size\": 100,\n    \"stack_sizes\": [100, 100]\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/solver/solve",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"solver",
+						"solve"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Test Invalid Job Submission",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Status code is 400 for invalid data\", function () {",
+							"    pm.response.to.have.status(400);",
+							"});",
+							"",
+							"pm.test(\"Response has error message\", function () {",
+							"    const responseJson = pm.response.json();",
+							"    pm.expect(responseJson).to.have.property('error');",
+							"    pm.expect(responseJson.error).to.be.a('string');",
+							"    pm.expect(responseJson.error.length).to.be.greaterThan(0);",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"invalid_field\": \"invalid_data\"\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/spots/simulate",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"spots",
+						"simulate"
+					]
+				}
+			},
+			"response": []
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"// Set default headers for all requests",
+					"pm.request.headers.add({\n    key: 'Accept',\n    value: 'application/json'\n});"
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"// Global test setup",
+					"pm.test(\"Response time is reasonable\", function () {",
+					"    pm.expect(pm.response.responseTime).to.be.below(10000);",
+					"});",
+					"",
+					"pm.test(\"Response is JSON\", function () {",
+					"    pm.response.to.be.json;",
+					"});"
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:5001",
+			"type": "string"
+		}
+	]
+} 

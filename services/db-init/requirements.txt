@@ -1,0 +1,12 @@
+# Database initialization dependencies for PLOScope
+# Core database migration tools
+alembic==1.13.2
+SQLAlchemy>=2.0.0
+psycopg2-binary==2.9.10
+
+# Flask integration (if needed for environment setup)
+Flask>=2.0.0
+Flask-Migrate>=4.0.0
+
+# Additional utilities
+python-dotenv>=1.0.0

@@ -1,0 +1,53 @@
+{
+  "default": {
+    "require": ["features/**/*.js"],
+    "format": [
+      "progress",
+      "html:reports/cucumber-report.html",
+      "json:reports/cucumber-report.json"
+    ],
+    "formatOptions": {
+      "snippetInterface": "async-await"
+    },
+    "publishQuiet": true
+  },
+  "development": {
+    "require": ["features/**/*.js"],
+    "format": [
+      "progress",
+      "html:reports/cucumber-report-dev.html",
+      "json:reports/cucumber-report-dev.json"
+    ],
+    "formatOptions": {
+      "snippetInterface": "async-await"
+    },
+    "publishQuiet": true,
+    "tags": "not @wip"
+  },
+  "headless": {
+    "require": ["features/**/*.js"],
+    "format": [
+      "progress",
+      "html:reports/cucumber-report-headless.html",
+      "json:reports/cucumber-report-headless.json"
+    ],
+    "formatOptions": {
+      "snippetInterface": "async-await"
+    },
+    "publishQuiet": true,
+    "tags": "not @wip"
+  },
+  "ci": {
+    "require": ["features/**/*.js"],
+    "format": [
+      "progress",
+      "html:reports/cucumber-report-ci.html",
+      "json:reports/cucumber-report-ci.json"
+    ],
+    "formatOptions": {
+      "snippetInterface": "async-await"
+    },
+    "publishQuiet": true,
+    "tags": "not @wip and not @slow"
+  }
+}

@@ -1,0 +1,139 @@
+apiVersion: 1
+
+datasources:
+  # Staging Prometheus (local)
+  - name: Prometheus (Staging)
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true
+    jsonData:
+      httpMethod: POST
+      manageAlerts: true
+      prometheusType: Prometheus
+      prometheusVersion: 2.40.0
+      cacheLevel: 'High'
+      disableRecordingRules: false
+      incrementalQueryOverlapWindow: 10m
+
+  # Production Prometheus (remote)
+  - name: Prometheus (Production)
+    type: prometheus
+    access: proxy
+    url: ${PRODUCTION_PROMETHEUS_URL}
+    editable: true
+    basicAuth: true
+    basicAuthUser: ${PRODUCTION_PROMETHEUS_USER}
+    secureJsonData:
+      basicAuthPassword: ${PRODUCTION_PROMETHEUS_PASSWORD}
+    jsonData:
+      httpMethod: POST
+      manageAlerts: false
+      prometheusType: Prometheus
+      prometheusVersion: 2.40.0
+      cacheLevel: 'High'
+      disableRecordingRules: false
+      incrementalQueryOverlapWindow: 10m
+
+  # Staging Loki (local)
+  - name: Loki (Staging)
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    editable: true
+    jsonData:
+      maxLines: 1000
+      derivedFields:
+        - datasourceUid: prometheus-staging
+          matcherRegex: "container_name=\"([^\"]+)\""
+          name: "Container Metrics"
+          url: "/d/container-metrics?var-container=${__value.raw}"
+
+  # Production Loki (remote)
+  - name: Loki (Production)
+    type: loki
+    access: proxy
+    url: ${PRODUCTION_LOKI_URL}
+    editable: true
+    basicAuth: true
+    basicAuthUser: ${PRODUCTION_LOKI_USER}
+    secureJsonData:
+      basicAuthPassword: ${PRODUCTION_LOKI_PASSWORD}
+    jsonData:
+      maxLines: 1000
+      derivedFields:
+        - datasourceUid: prometheus-production
+          matcherRegex: "container_name=\"([^\"]+)\""
+          name: "Container Metrics"
+          url: "/d/container-metrics?var-container=${__value.raw}"
+
+  # Staging Tempo (local)
+  - name: Tempo (Staging)
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    editable: true
+    jsonData:
+      httpMethod: GET
+      tracesToLogs:
+        datasourceUid: P5CA6E0688B18D13B
+        tags: ['job', 'instance', 'pod', 'namespace']
+        mappedTags: [{ key: 'service.name', value: 'service' }]
+        mapTagNamesEnabled: false
+        spanStartTimeShift: '1h'
+        spanEndTimeShift: '1h'
+        filterByTraceID: false
+        filterBySpanID: false
+      tracesToMetrics:
+        datasourceUid: PDE721BD19156384A
+        tags: [{ key: 'service.name', value: 'service' }, { key: 'job' }]
+        queries:
+          - name: 'Sample query'
+            query: 'sum(rate(tempo_spanmetrics_latency_bucket{$$__tags}[5m]))'
+      serviceMap:
+        datasourceUid: PDE721BD19156384A
+        enabled: true
+      nodeGraph:
+        enabled: true
+      search:
+        hide: false
+      lokiSearch:
+        datasourceUid: P5CA6E0688B18D13B
+
+  # Production Tempo (remote - if available)
+  - name: Tempo (Production)
+    type: tempo
+    access: proxy
+    url: ${PRODUCTION_TEMPO_URL:-http://tempo:3200}
+    editable: true
+    basicAuth: true
+    basicAuthUser: ${PRODUCTION_TEMPO_USER:-}
+    secureJsonData:
+      basicAuthPassword: ${PRODUCTION_TEMPO_PASSWORD:-}
+    jsonData:
+      httpMethod: GET
+      tracesToLogs:
+        datasourceUid: PAABE892D2EFEB273
+        tags: ['job', 'instance', 'pod', 'namespace']
+        mappedTags: [{ key: 'service.name', value: 'service' }]
+        mapTagNamesEnabled: false
+        spanStartTimeShift: '1h'
+        spanEndTimeShift: '1h'
+        filterByTraceID: false
+        filterBySpanID: false
+      tracesToMetrics:
+        datasourceUid: PA41442CB522D174D
+        tags: [{ key: 'service.name', value: 'service' }, { key: 'job' }]
+        queries:
+          - name: 'Sample query'
+            query: 'sum(rate(tempo_spanmetrics_latency_bucket{$$__tags}[5m]))'
+      serviceMap:
+        datasourceUid: PA41442CB522D174D
+        enabled: true
+      nodeGraph:
+        enabled: true
+      search:
+        hide: false
+      lokiSearch:
+        datasourceUid: PAABE892D2EFEB273

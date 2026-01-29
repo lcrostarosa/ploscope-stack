@@ -1,0 +1,202 @@
+---
+- name: Create SSH config for GitHub access
+  block:
+    - name: Ensure SSH directory permissions are correct
+      file:
+        path: /home/appuser/.ssh
+        mode: '0700'
+        owner: appuser
+        group: appuser
+      become: yes
+      become_user: appuser
+
+    - name: Create SSH config file for GitHub
+      copy:
+        dest: /home/appuser/.ssh/config
+        content: |
+          Host github.com
+            HostName github.com
+            User git
+            IdentityFile ~/.ssh/github_ed25519
+            IdentitiesOnly yes
+        mode: '0600'
+        owner: appuser
+        group: appuser
+      become: yes
+
+- name: Add GitHub to known_hosts
+  known_hosts:
+    name: github.com
+    key: "{{ lookup('pipe', 'ssh-keyscan -t rsa github.com') }}"
+    state: present
+  become: yes
+  become_user: appuser
+
+- name: Verify GitHub host key is in known_hosts
+  command: ssh-keygen -F github.com
+  become: yes
+  become_user: appuser
+  register: github_host_key_check
+  
+
+- name: Display GitHub host key status
+  debug:
+    msg: |
+      GitHub Host Key Status:
+      {% if github_host_key_check.rc == 0 %}
+      ✅ GitHub host key is in known_hosts
+      {% else %}
+      ⚠️  GitHub host key not found in known_hosts
+      {% endif %}
+
+- name: Test GitHub SSH authentication (expect connection rejection)
+  command: ssh -o ConnectTimeout=10 -o BatchMode=yes -T git@github.com
+  become: yes
+  become_user: appuser
+  register: github_ssh_test
+  failed_when: github_ssh_test.rc != 1
+  changed_when: false
+  
+
+- name: Start SSH agent and list keys
+  shell: |
+    eval $(ssh-agent -s)
+    ssh-add -l || echo "No keys in agent"
+  become: yes
+  become_user: appuser
+  register: ssh_add_list
+  
+
+- name: Check if GitHub SSH key exists
+  stat:
+    path: /home/appuser/.ssh/github_ed25519
+  register: github_key_exists
+
+- name: Display SSH key information
+  debug:
+    msg: |
+      SSH Key Diagnostics:
+      SSH Agent Keys: {{ ssh_add_list.stdout }}
+      GitHub Key Path: /home/appuser/.ssh/github_ed25519
+      GitHub Key Exists: {{ github_key_exists.stat.exists }}
+
+- name: Add GitHub SSH key to SSH agent
+  shell: |
+    eval $(ssh-agent -s)
+    ssh-add /home/appuser/.ssh/github_ed25519 || echo "Failed to add key to agent"
+  become: yes
+  become_user: appuser
+  register: ssh_add_result
+  
+
+- name: Test GitHub SSH connection with specific key
+  command: ssh -i /home/appuser/.ssh/github_ed25519 -T git@github.com
+  become: yes
+  become_user: appuser
+  register: github_ssh_test_specific
+  failed_when: github_ssh_test_specific.rc != 1
+  changed_when: false
+  
+
+- name: Display specific key test result
+  debug:
+    msg: |
+      GitHub SSH Test with Specific Key:
+      {% if github_ssh_test_specific.failed %}
+      ❌ Failed: {{ github_ssh_test_specific.stderr }}
+      {% else %}
+      ✅ Success: {{ github_ssh_test_specific.stdout }}
+      {% endif %}
+
+- name: Add SSH key to GitHub via API (if token provided)
+  block:
+    - name: Check if GitHub token is provided
+      debug:
+        msg: |
+          🤖 AUTOMATIC GITHUB SSH KEY ADDITION 🤖
+          
+          To automatically add the SSH key to GitHub, provide:
+          - github_token: Your GitHub personal access token
+          - github_username: Your GitHub username
+          
+          If these are not provided, you'll need to add the key manually.
+
+    - name: Get GitHub SSH public key content
+      command: cat /home/appuser/.ssh/github_ed25519.pub
+      become: yes
+      become_user: appuser
+      register: github_ssh_public_key
+      when: github_token is defined and github_token != ""
+
+    - name: Add SSH key to GitHub via API
+      uri:
+        url: "https://api.github.com/user/keys"
+        method: POST
+        headers:
+          Authorization: "token {{ github_token }}"
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          title: "PLOSolver Hetzner Server - {{ ansible_date_time.iso8601 }}"
+          key: "{{ github_ssh_public_key.stdout }}"
+        status_code: [201, 422]
+      register: github_key_result
+      when: github_token is defined and github_token != ""
+      
+
+    - name: Display GitHub key addition result
+      debug:
+        msg: |
+          GitHub SSH Key Addition Result:
+          {% if github_key_result is defined and github_key_result.failed %}
+          ⚠️  Failed to add SSH key to GitHub automatically
+          Please add the key manually to your GitHub account
+          {% elif github_key_result is defined and not github_key_result.failed %}
+          ✅ Successfully added SSH key to GitHub
+          Key ID: {{ github_key_result.json.id | default('N/A') if github_key_result is defined else 'N/A' }}
+          {% else %}
+          ℹ️  GitHub SSH key addition skipped (no token provided)
+          Please add the SSH key manually to your GitHub account
+          {% endif %}
+
+- name: Test GitHub SSH connection after API addition
+  command: ssh -T git@github.com
+  become: yes
+  become_user: appuser
+  register: github_ssh_test_after_api
+  failed_when: github_ssh_test_after_api.rc != 1
+  changed_when: false
+  when: github_token is defined and github_token != ""
+
+- name: Display final GitHub SSH test result
+  debug:
+    msg: |
+      Final GitHub SSH Test Result:
+      {% if github_ssh_test_after_api is defined and github_ssh_test_after_api.failed %}
+      ❌ GitHub SSH connection still failed after API addition: {{ github_ssh_test_after_api.stderr }}
+      {% elif github_ssh_test_after_api is defined and not github_ssh_test_after_api.failed %}
+      ✅ GitHub SSH connection successful after API addition: {{ github_ssh_test_after_api.stdout }}
+      {% else %}
+      ℹ️  GitHub SSH test skipped (no token provided)
+      {% endif %}
+
+- name: Display GitHub SSH test result
+  debug:
+    msg: |
+      GitHub SSH Test Result:
+      {% if github_ssh_test.failed %}
+      ❌ GitHub SSH connection failed: {{ github_ssh_test.stderr }}
+      {% else %}
+      ✅ GitHub SSH connection successful: {{ github_ssh_test.stdout }}
+      {% endif %}
+
+
+- name: Create SSL directory (as appuser)
+  file:
+    path: "{{ ssl_dir }}"
+    state: directory
+    mode: '0755'
+    owner: appuser
+    group: appuser
+  become: yes
+  become_user: appuser

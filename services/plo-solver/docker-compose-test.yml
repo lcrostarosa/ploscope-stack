@@ -1,0 +1,303 @@
+# Test Environment Docker Compose Configuration
+# Removed version attribute as it's obsolete in newer Docker Compose versions
+
+services:
+  db:
+    image: postgres:15
+    container_name: plosolver-db-test
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=testuser
+      - POSTGRES_PASSWORD=testpassword
+      - POSTGRES_DB=plosolver
+    profiles:
+      - bootstrap
+    networks:
+      - plo-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U testuser -d plosolver"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: plosolver-rabbitmq-test
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: plosolver
+      RABBITMQ_DEFAULT_PASS: dev_password_2024
+      RABBITMQ_DEFAULT_VHOST: /plosolver
+    depends_on:
+      db:
+        condition: service_healthy
+      db-migrate:
+        condition: service_completed_successfully
+    profiles:
+      - bootstrap
+    networks:
+      - plo-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: plosolver-redis-test
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./data/redis-test:/data
+    command: redis-server --appendonly yes --maxmemory 64mb --maxmemory-policy allkeys-lru --requirepass test_redis_password_2024
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "test_redis_password_2024", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    profiles:
+      - bootstrap
+    networks:
+      - plo-network
+
+  traefik:
+    image: traefik:v3.4.4
+    container_name: plosolver-traefik-test
+    command:
+      - "--configfile=/etc/traefik/traefik.yml"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./server/traefik/test/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./server/traefik/test/dynamic.docker.yml:/etc/traefik/dynamic.yml:ro
+    profiles:
+      - bootstrap
+    networks:
+      - plo-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/dashboard/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  frontend:
+    image: ploscope/frontend:${IMAGE_TAG:-latest}
+    pull_policy: always
+    platform: ${TEST_PLATFORM:-}
+    container_name: plosolver-frontend-test
+    ports:
+      - "3000:3000"
+    env_file:
+      - env.test
+    depends_on:
+      backend:
+        condition: service_healthy
+    profiles:
+      - bootstrap
+    networks:
+      - plo-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  backend:
+    image: ploscope/backend:${IMAGE_TAG:-latest}
+    pull_policy: always
+    platform: ${TEST_PLATFORM:-}
+    container_name: plosolver-backend-test
+    ports:
+      - "5001:5001"
+    env_file:
+      - env.test
+    environment:
+      - NODE_ENV=test
+      - DATABASE_URL=postgresql://testuser:testpassword@db:5432/plosolver
+      - POSTGRES_USER=testuser
+      - POSTGRES_PASSWORD=testpassword
+      - POSTGRES_DB=plosolver
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USERNAME=plosolver
+      - RABBITMQ_PASSWORD=dev_password_2024
+      - RABBITMQ_VHOST=/plosolver
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+      db-migrate:
+        condition: service_completed_successfully
+      rabbitmq-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    profiles:
+      - bootstrap
+    networks:
+      - plo-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 2
+      start_period: 60s
+
+  db-migrate:
+    build:
+      context: src/db-init
+      dockerfile: Dockerfile
+      args:
+        BUILDKIT_INLINE_CACHE: 1
+    container_name: plosolver-db-migrate-test
+    environment:
+      - DATABASE_URL=postgresql://testuser:testpassword@db:5432/plosolver
+      - POSTGRES_DB=plosolver
+      - POSTGRES_USER=testuser
+      - POSTGRES_PASSWORD=testpassword
+      - POSTGRES_HOST=db
+      - POSTGRES_MIGRATE_HOST=db
+      - PGPASSWORD=testpassword
+      # Optional schema override for migrations; can be overridden at runtime
+      - SCHEMA_USER=${SCHEMA_USER:-}
+      - SCHEMA_PASSWORD=${SCHEMA_PASSWORD:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles:
+      - migrate
+      - bootstrap
+    restart: "no"
+    networks:
+      - plo-network
+
+  rabbitmq-init:
+    build:
+      context: src/rabbitmq-init
+      dockerfile: Dockerfile
+      args:
+        BUILDKIT_INLINE_CACHE: 1
+    container_name: plosolver-rabbitmq-init-test
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USERNAME=plosolver
+      - RABBITMQ_PASSWORD=dev_password_2024
+      - RABBITMQ_VHOST=/plosolver
+      - RABBITMQ_SPOT_QUEUE=spot-processing
+      - RABBITMQ_SOLVER_QUEUE=solver-processing
+      - RABBITMQ_SPOT_DLQ=spot-processing-dlq
+      - RABBITMQ_SOLVER_DLQ=solver-processing-dlq
+      - CONTAINER_ENV=docker
+      - TESTING=true
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    profiles:
+      - bootstrap
+    restart: "no"
+    networks:
+      - plo-network
+
+  newman:
+    image: postman/newman:alpine
+    container_name: plosolver-newman-test
+    volumes:
+      - ./postman:/etc/newman:ro
+    command: ["run", "PLOSolver-Integration-Tests.postman_collection.json", "-e", "PLOSolver-CI-Environment.postman_environment.json", "--env-var", "base_url=http://traefik"]
+    depends_on:
+      traefik:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    profiles:
+      - bootstrap
+    networks:
+      - plo-network
+
+  celeryworker:
+    image: ploscope/celery-worker:${IMAGE_TAG:-latest}
+    pull_policy: always
+    platform: ${TEST_PLATFORM:-}
+    container_name: plosolver-celeryworker-test
+    environment:
+      - CELERY_BROKER_URL=amqp://plosolver:dev_password_2024@rabbitmq:5672/%2Fplosolver
+      - CELERY_RESULT_BACKEND=redis://:test_redis_password_2024@redis:6379/0
+      - DATABASE_URL=postgresql://testuser:testpassword@db:5432/plosolver
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USERNAME=plosolver
+      - RABBITMQ_PASSWORD=dev_password_2024
+      - RABBITMQ_VHOST=/plosolver
+      - CELERY_WORKER_CONCURRENCY=2
+      - ENVIRONMENT=test
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    profiles:
+      - bootstrap
+    networks:
+      - plo-network
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "celery"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  playwright:
+    image: ploscope/playwright:${IMAGE_TAG:-latest}
+    pull_policy: always
+    # Local override: uncomment to build locally instead of pulling
+    # build:
+    #   context: src/frontend
+    #   dockerfile: Dockerfile.playwright
+    #   args:
+    #     BUILDKIT_INLINE_CACHE: 1
+    container_name: plosolver-playwright-test
+    environment:
+      - CUCUMBER_HEADLESS=true
+      - CUCUMBER_BASE_URL=http://traefik
+      - NODE_ENV=test
+      - PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+      - DISPLAY=:99
+    depends_on:
+      traefik:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+      celeryworker:
+        condition: service_healthy
+    profiles:
+      - test
+    networks:
+      - plo-network
+    volumes:
+      - ./test-results:/app/test-results
+      - ./screenshots:/app/screenshots
+      - ./reports:/app/reports
+    shm_size: '2gb'
+    security_opt:
+      - seccomp:unconfined
+    cap_add:
+      - SYS_ADMIN
+
+networks:
+  plo-network:
+    driver: bridge
+    name: plosolver-test-network 

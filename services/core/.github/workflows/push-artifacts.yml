@@ -1,0 +1,183 @@
+on:
+  push:
+    branches: [main, master, develop]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [main, master, develop]
+  workflow_dispatch:
+    inputs:
+      pypi_version:
+        description: 'PyPI version to publish (e.g., 1.0.0)'
+        required: true
+        default: '1.0.0'
+      skip_tests:
+        description: 'Skip unit tests'
+        type: boolean
+        default: false
+      publish_pypi:
+        description: 'Publish to PyPI'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+env:
+  REGISTRY: docker.io
+  IMAGE_NAME: ploscope
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    runs-on: ${{ vars.GHA_RUNNER }}
+    timeout-minutes: 1
+    outputs:
+      core_changed: ${{ steps.filter.outputs.core_changed }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Detect changes in plosolver_core
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          filters: |
+            core_changed:
+              - 'src/**'
+              - 'pyproject.toml'
+              - 'poetry.lock'
+
+  publish:
+    needs: prepare
+    if: >-
+      ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && needs.prepare.outputs.core_changed == 'true') }}
+    runs-on: ${{ vars.GHA_RUNNER }}
+    timeout-minutes: 2
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      pypi_version: ${{ steps.pypi_version.outputs.pypi_version }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Install poetry
+        if: ${{ vars.GHA_RUNNER }} != 'self-hosted'
+        uses: abatilo/actions-poetry@v4
+        env:
+          POETRY_HTTP_BASIC_NEXUS_INTERNAL_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          POETRY_HTTP_BASIC_NEXUS_INTERNAL_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+
+      - name: Install poetry manually (fallback for self-hosted runners)
+        if: ${{ vars.GHA_RUNNER }} == 'self-hosted'
+        env:
+          POETRY_HTTP_BASIC_NEXUS_INTERNAL_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          POETRY_HTTP_BASIC_NEXUS_INTERNAL_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+        run: |
+          curl -sL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - uses: actions/cache@v3
+        name: Define a cache for the virtual environment based on the dependencies lock file
+        if: github.event.inputs.skip_tests != 'true' || github.event.inputs.publish_pypi == 'true' || github.event_name == 'push' || github.event_name == 'pull_request'
+        with:
+          path: ./.venv
+          key: venv-${{ hashFiles('poetry.lock') }}
+
+      - uses: actions/cache@v3
+        name: Define a cache for the virtual environment based on the dependencies lock file
+        if: github.event.inputs.skip_tests != 'true' || github.event.inputs.publish_pypi == 'true' || github.event_name == 'push'
+        with:
+          path: ./.venv
+          key: venv-${{ hashFiles('poetry.lock') }}
+
+      - name: Install dependencies
+        if: github.event.inputs.skip_tests != 'true' || github.event.inputs.publish_pypi == 'true' || github.event_name == 'push'
+        run: |
+          poetry install --with test
+
+      - name: Compute version
+        if: github.event.inputs.skip_tests != 'true' || github.event.inputs.publish_pypi == 'true' || github.event_name == 'push'
+        id: pypi_version
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            echo "pypi_version=${{ github.event.inputs.pypi_version }}" >> $GITHUB_OUTPUT
+          elif [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "pypi_version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+          elif [ "$EVENT" = "pull_request" ]; then
+            git fetch --tags --quiet
+            latest=$(git tag -l 'v*' --sort=-v:refname | head -n1)
+            base=${latest#v}
+            IFS='.' read -r MA MI PA <<< "$base"
+            : "${MA:=1}"; : "${MI:=0}"; : "${PA:=0}"
+            NEW_PA=$((PA+1))
+            # Use a PEP 440-compliant dev release for PR builds
+            echo "pypi_version=${MA}.${MI}.${NEW_PA}.dev${PR_NUMBER}" >> $GITHUB_OUTPUT
+          else
+            echo "pypi_version=1.0.0" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Update version in pyproject.toml
+        if: github.event.inputs.skip_tests != 'true' || github.event.inputs.publish_pypi == 'true' || github.event_name == 'push'
+        run: |
+          # Check if we need to navigate to a subdirectory
+          if [ -f "core/pyproject.toml" ]; then
+            echo "Found pyproject.toml in core/ subdirectory, changing to that directory"
+            cd core
+          elif [ -f "pyproject.toml" ]; then
+            echo "Found pyproject.toml in current directory"
+          else
+            echo "ERROR: pyproject.toml not found in current directory or core/ subdirectory"
+            exit 1
+          fi
+          poetry version ${{ steps.pypi_version.outputs.pypi_version }}
+
+      - name: Run unit tests
+        if: github.event.inputs.skip_tests != 'true' || github.event.inputs.publish_pypi == 'true' || github.event_name == 'push'
+        run: |
+          pwd
+          ls -la
+          # Check if we need to navigate to a subdirectory
+          if [ -f "core/pyproject.toml" ]; then
+            echo "Found pyproject.toml in core/ subdirectory, changing to that directory"
+            cd core
+          elif [ -f "pyproject.toml" ]; then
+            echo "Found pyproject.toml in current directory"
+          else
+            echo "ERROR: pyproject.toml not found in current directory or core/ subdirectory"
+            exit 1
+          fi
+          pwd
+          ls -la
+          poetry run pytest tests/ -v
+
+      - name: Build package
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        run: |
+          # Check if we need to navigate to a subdirectory
+          if [ -f "core/pyproject.toml" ]; then
+            echo "Found pyproject.toml in core/ subdirectory, changing to that directory"
+            cd core
+          elif [ -f "pyproject.toml" ]; then
+            echo "Found pyproject.toml in current directory"
+          else
+            echo "ERROR: pyproject.toml not found in current directory or core/ subdirectory"
+            exit 1
+          fi
+          poetry build
+
+      - name: Publish to Nexus Repository
+        if: github.event.inputs.publish_pypi == 'true' || github.event_name == 'push'
+        env:
+          POETRY_PYPI_TOKEN_PYPI: ${{ secrets.NEXUS_PASSWORD }}
+        run: |
+          poetry config repositories.nexus "${{ secrets.NEXUS_URL }}/repository/pypi-internal/"
+          poetry config http-basic.nexus ${{ secrets.NEXUS_USERNAME }} ${{ secrets.NEXUS_PASSWORD }}
+          poetry publish --repository nexus

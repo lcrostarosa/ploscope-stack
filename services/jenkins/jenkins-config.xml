@@ -1,0 +1,269 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<flow-definition plugin="workflow-job@1309.vd2290d3344a_f">
+  <description>PLOSolver Security Analysis Pipeline - Runs comprehensive security checks including Semgrep with SARIF output</description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <jenkins.model.BuildDiscarderProperty>
+      <strategy class="hudson.tasks.LogRotator">
+        <daysToKeep>30</daysToKeep>
+        <numToKeep>50</numToKeep>
+        <artifactDaysToKeep>-1</artifactDaysToKeep>
+        <artifactNumToKeep>-1</artifactNumToKeep>
+      </strategy>
+    </jenkins.model.BuildDiscarderProperty>
+    <hudson.plugins.disk__usage.DiskUsageProperty/>
+    <org.jenkinsci.plugins.workflow.job.properties.PipelineTriggersJobProperty>
+      <triggers>
+        <hudson.triggers.SCMTrigger>
+          <spec>H/15 * * * *</spec>
+        </hudson.triggers.SCMTrigger>
+      </triggers>
+    </org.jenkinsci.plugins.workflow.job.properties.PipelineTriggersJobProperty>
+  </properties>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@3853.vb_a_490d892d5">
+    <script>pipeline {
+    agent any
+    
+    environment {
+        WORKSPACE_DIR = "${WORKSPACE}"
+        SECURITY_RESULTS_DIR = "${WORKSPACE}/security-results"
+        SEMGREP_RESULTS = "${WORKSPACE}/semgrep-results.sarif"
+        TRIVY_RESULTS = "${WORKSPACE}/trivy-fs-results.sarif"
+        BACKEND_IMAGE = "ghcr.io/ploscope/plo-solver-backend:latest"
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+        
+        stage('Setup Environment') {
+            steps {
+                script {
+                    // Create results directory
+                    sh 'mkdir -p ${SECURITY_RESULTS_DIR}'
+                    
+                    // Check if Docker is available
+                    sh 'docker --version'
+                    
+                    // Check if required tools are available
+                    sh '''
+                        echo "Checking required tools..."
+                        which semgrep || echo "Semgrep not found, will install"
+                        which trivy || echo "Trivy not found, will install"
+                        which bandit || echo "Bandit not found, will install"
+                        which safety || echo "Safety not found, will install"
+                        which pip-audit || echo "pip-audit not found, will install"
+                    '''
+                }
+            }
+        }
+        
+        stage('Install Security Tools') {
+            steps {
+                script {
+                    // Install Python security tools
+                    sh '''
+                        pip install --user bandit safety pip-audit semgrep
+                        export PATH=$PATH:$HOME/.local/bin
+                        
+                        # Install Trivy if not available
+                        if ! command -v trivy &> /dev/null; then
+                            echo "Installing Trivy..."
+                            curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin v0.28.0
+                        fi
+                    '''
+                }
+            }
+        }
+        
+        stage('Frontend Security Checks') {
+            steps {
+                script {
+                    dir('src/frontend') {
+                        // Install dependencies
+                        sh 'npm ci'
+                        sh 'npm install --save-dev eslint-plugin-security eslint-plugin-react-hooks'
+                        
+                        // Run ESLint security checks
+                        sh '''
+                            npx eslint src/ --ext .js,.jsx --format json --output-file ${WORKSPACE}/eslint-results.json || true
+                            npx eslint src/ --ext .js,.jsx --format stylish > ${WORKSPACE}/eslint-readable.txt || true
+                        '''
+                        
+                        // Run npm audit
+                        sh '''
+                            npm audit --audit-level=moderate --json > ${WORKSPACE}/npm-audit-results.json || true
+                            npm audit --audit-level=moderate > ${WORKSPACE}/npm-audit-readable.txt || true
+                        '''
+                    }
+                }
+            }
+        }
+        
+        stage('Backend Security Checks') {
+            steps {
+                script {
+                    dir('src/backend') {
+                        // Set up Python environment
+                        sh '''
+                            python3 -m venv venv
+                            source venv/bin/activate
+                            pip install -r requirements.txt
+                            pip install -r requirements-test.txt
+                        '''
+                        
+                        // Run Bandit
+                        sh '''
+                            source venv/bin/activate
+                            bandit -r . -f json -o ${WORKSPACE}/bandit-results.json || true
+                            bandit -r . -f txt -o ${WORKSPACE}/bandit-readable.txt || true
+                        '''
+                        
+                        // Run Safety
+                        sh '''
+                            source venv/bin/activate
+                            safety check --json --output ${WORKSPACE}/safety-results.json || true
+                            safety check --output ${WORKSPACE}/safety-readable.txt || true
+                        '''
+                        
+                        // Run pip-audit
+                        sh '''
+                            source venv/bin/activate
+                            pip-audit --format=json --output=${WORKSPACE}/pip-audit-results.json || true
+                            pip-audit --output=${WORKSPACE}/pip-audit-readable.txt || true
+                        '''
+                    }
+                }
+            }
+        }
+        
+        stage('Semgrep Analysis') {
+            steps {
+                script {
+                    // Run Semgrep with SARIF output
+                    sh '''
+                        export PATH=$PATH:$HOME/.local/bin
+                        semgrep --config=auto --output-format=sarif --output=${SEMGREP_RESULTS} . || true
+                        
+                        # Also generate JSON output for compatibility
+                        semgrep --config=auto --json --output=${WORKSPACE}/semgrep-results.json . || true
+                        
+                        # Generate readable output
+                        semgrep --config=auto --output=${WORKSPACE}/semgrep-readable.txt . || true
+                    '''
+                }
+            }
+        }
+        
+        stage('Trivy Filesystem Scan') {
+            steps {
+                script {
+                    // Run Trivy filesystem scan
+                    sh '''
+                        trivy fs --format sarif --output ${TRIVY_RESULTS} --severity CRITICAL,HIGH,MEDIUM . || true
+                        
+                        # Also generate JSON output
+                        trivy fs --format json --output ${WORKSPACE}/trivy-fs-results.json --severity CRITICAL,HIGH,MEDIUM . || true
+                        
+                        # Generate readable output
+                        trivy fs --output ${WORKSPACE}/trivy-fs-readable.txt --severity CRITICAL,HIGH,MEDIUM . || true
+                    '''
+                }
+            }
+        }
+        
+        stage('Generate Security Report') {
+            steps {
+                script {
+                    // Generate comprehensive security report
+                    sh '''
+                        cat > ${WORKSPACE}/security-report.md << 'EOF'
+# PLOSolver Security Analysis Report
+Generated: $(date)
+Jenkins Build: ${BUILD_NUMBER}
+
+## Summary
+This report contains the results of automated security analysis for the PLOSolver codebase.
+
+## Tools Used
+- **Semgrep**: Static analysis with security rules
+- **Trivy**: Container and filesystem vulnerability scanning
+- **Bandit**: Python security analysis
+- **Safety**: Python package vulnerability checking
+- **pip-audit**: Python package security auditing
+- **ESLint**: JavaScript/React security linting
+- **npm audit**: Node.js package vulnerability scanning
+
+## Results Files
+- `semgrep-results.sarif`: Semgrep results in SARIF format
+- `trivy-fs-results.sarif`: Trivy filesystem scan results in SARIF format
+- `*-results.json`: Raw tool outputs in JSON format
+- `*-readable.txt`: Human-readable tool outputs
+
+## Next Steps
+1. Review all security findings
+2. Address critical and high severity issues
+3. Update dependencies with known vulnerabilities
+4. Implement security best practices where needed
+
+EOF
+                    '''
+                }
+            }
+        }
+        
+        stage('Archive Results') {
+            steps {
+                script {
+                    // Archive all security results
+                    archiveArtifacts artifacts: '''
+                        security-results/**,
+                        *.sarif,
+                        *-results.json,
+                        *-readable.txt,
+                        security-report.md
+                    ''', fingerprint: true
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            script {
+                // Generate summary
+                echo "Security analysis completed for build ${BUILD_NUMBER}"
+                echo "Results archived in Jenkins artifacts"
+                
+                // Check if SARIF files were generated
+                if (fileExists('semgrep-results.sarif')) {
+                    echo "✅ Semgrep SARIF file generated successfully"
+                } else {
+                    echo "❌ Semgrep SARIF file not found"
+                }
+                
+                if (fileExists('trivy-fs-results.sarif')) {
+                    echo "✅ Trivy SARIF file generated successfully"
+                } else {
+                    echo "❌ Trivy SARIF file not found"
+                }
+            }
+        }
+        
+        success {
+            echo "🎉 Security analysis completed successfully!"
+        }
+        
+        failure {
+            echo "❌ Security analysis failed. Check the logs for details."
+        }
+    }
+}</script>
+    <sandbox>true</sandbox>
+  </definition>
+  <triggers/>
+  <disabled>false</disabled>
+</flow-definition> 

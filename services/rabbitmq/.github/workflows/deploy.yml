@@ -1,0 +1,211 @@
+---
+# It is triggered by a release being published to the GitHub repository.
+# The workflow will deploy the RabbitMQ and database services to the production server.
+# The workflow will also deploy the services to the staging server.
+name: Deploy RabbitMQ and Database Services
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Docker image tag (e.g., v1.2.3)
+        required: true
+        default: staging
+      environment:
+        description: Environment to deploy to (e.g., staging, production)
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - production
+
+  release:
+    types: [published]
+
+jobs:
+  deploy:
+    runs-on: ${{ vars.GHA_RUNNER }}
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Resolve inputs
+        id: vars
+        run: |
+          echo "TAG=${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}" >> $GITHUB_OUTPUT
+          echo "HOST=${{ secrets.DEPLOY_HOST }}" >> $GITHUB_OUTPUT
+          echo "USER=${{ secrets.DEPLOY_USER }}" >> $GITHUB_OUTPUT
+
+      - name: Validate production deployment source
+        if: inputs.environment == 'production'
+        run: |
+          # Only allow production deploys from master branch and production tags (v*.*.*)
+          if [[ "${GITHUB_REF}" != "refs/heads/master" && "${GITHUB_REF}" != refs/tags/v* ]]; then
+            echo "Production deployment is only allowed from the master branch or production tags (v*.*.*)."
+            exit 1
+          fi
+
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          timeout: 300s
+          allenvs: true
+          script: |
+            set -e
+
+            export APP_NAME="rabbitmq"
+            export ENVIRONMENT="${{ inputs.environment }}"
+            export VERSION="${{ github.sha }}"
+
+            # Determine if this is a tag or branch deployment
+            if [[ "${{ github.event_name }}" == "release" ]]; then
+              export REF_TYPE="tag"
+              export REF_NAME="${{ github.event.release.tag_name }}"
+            else
+              export REF_TYPE="branch"
+              export REF_NAME="${{ github.ref_name }}"
+            fi
+
+            # RabbitMQ environment variables
+            # Strip newlines and whitespace from all environment variables
+            # This handles cases where GitHub Actions secrets/vars have trailing newlines
+            export RABBITMQ_HOST=$(echo "${{ vars.RABBITMQ_HOST }}" | tr -d '\r\n' | xargs)
+            export RABBITMQ_PORT=$(echo "${{ vars.RABBITMQ_PORT }}" | tr -d '\r\n' | xargs)
+            export RABBITMQ_MAIN_EXCHANGE=$(echo "${{ vars.RABBITMQ_MAIN_EXCHANGE }}" | tr -d '\r\n' | xargs)
+            export RABBITMQ_DLQ_EXCHANGE=$(echo "${{ vars.RABBITMQ_DLQ_EXCHANGE }}" | tr -d '\r\n' | xargs)
+            export RABBITMQ_USERNAME=$(echo "${{ secrets.RABBITMQ_USERNAME }}" | tr -d '\r\n' | xargs)
+            export RABBITMQ_PASSWORD=$(echo "${{ secrets.RABBITMQ_PASSWORD }}" | tr -d '\r\n' | xargs)
+            export RABBITMQ_DEFAULT_USER=$(echo "${{ secrets.RABBITMQ_USERNAME }}" | tr -d '\r\n' | xargs)
+            export RABBITMQ_DEFAULT_PASS=$(echo "${{ secrets.RABBITMQ_PASSWORD }}" | tr -d '\r\n' | xargs)
+            export CELERY_BROKER_URL=$(echo "${{ secrets.CELERY_BROKER_URL }}" | tr -d '\r\n' | xargs)
+            export CELERY_RESULT_BACKEND=$(echo "${{ secrets.CELERY_RESULT_BACKEND }}" | tr -d '\r\n' | xargs)
+
+            export RABBITMQ_VHOST=$(echo "${{ vars.RABBITMQ_VHOST }}" | tr -d '\r\n' | xargs)
+            export RABBITMQ_SPOT_QUEUE=$(echo "${{ vars.RABBITMQ_SPOT_QUEUE }}" | tr -d '\r\n' | xargs)
+            export RABBITMQ_SOLVER_QUEUE=$(echo "${{ vars.RABBITMQ_SOLVER_QUEUE }}" | tr -d '\r\n' | xargs)
+            export RABBITMQ_SPOT_DLQ=$(echo "${{ vars.RABBITMQ_SPOT_DLQ }}" | tr -d '\r\n' | xargs)
+            export RABBITMQ_SOLVER_DLQ=$(echo "${{ vars.RABBITMQ_SOLVER_DLQ }}" | tr -d '\r\n' | xargs)
+
+            export RABBITMQ_CONTAINER="rabbitmq-${{ inputs.environment }}"
+            export RABBITMQ_USER=$(echo "${{ secrets.RABBITMQ_USERNAME }}" | tr -d '\r\n' | xargs)
+            export RABBITMQ_PASS=$(echo "${{ secrets.RABBITMQ_PASSWORD }}" | tr -d '\r\n' | xargs)
+
+            # Application environment variables
+            export APP_PATH="${{ secrets.APP_PATH }}"
+            export BUILD_ENV="${{ inputs.environment }}"
+            export CONTAINER_ENV="docker"
+            export ENVIRONMENT="${{ inputs.environment }}"
+            export LOG_LEVEL="INFO"
+            export RESTART_POLICY="unless-stopped"
+            export VOLUME_MODE="rw"
+            export TESTING="false"
+
+            mkdir -p $APP_PATH
+            cd $APP_PATH
+
+            # Check if the Docker network 'plo-network-cloud' exists, create if not
+            echo "🔗 Checking Docker network plo-network-cloud..."
+            if ! docker network inspect plo-network-cloud >/dev/null 2>&1; then
+              echo "🔗 Creating Docker network plo-network-cloud with subnet 172.30.1.0/24..."
+              if docker network create --subnet=172.30.1.0/24 plo-network-cloud; then
+                echo "✅ Docker network plo-network-cloud created successfully."
+              else
+                echo "❌ Failed to create Docker network plo-network-cloud."
+                echo "📋 Available networks:"
+                docker network ls
+                exit 1
+              fi
+            else
+              echo "✅ Docker network plo-network-cloud already exists."
+            fi
+
+            # Verify network was created successfully
+            echo "🔍 Verifying network configuration..."
+            docker network inspect plo-network-cloud --format '{{.Name}}: {{.IPAM.Config}}' || {
+              echo "❌ Network verification failed"
+              exit 1
+            }
+
+            # Check if Docker volumes 'rabbitmq_data' and 'traefik_certs' exist, create if not
+            if ! docker volume inspect rabbitmq_data >/dev/null 2>&1; then
+              echo "🔗 Creating Docker volume rabbitmq_data..."
+              docker volume create rabbitmq_data
+            fi
+
+            if ! docker volume inspect traefik_certs >/dev/null 2>&1; then
+              echo "🔗 Creating Docker volume traefik_certs..."
+              docker volume create traefik_certs
+            fi
+
+            if [ ! -d "$HOME/ploscope/$APP_NAME/.git" ]; then
+              echo "📥 Repository doesn't exist, cloning..."
+              cd ~/ploscope
+              git clone git@github.com:ploscope/$APP_NAME.git
+              git fetch --prune --tags origin
+              if [ "$REF_TYPE" = "tag" ]; then
+                git checkout -f "tags/$REF_NAME"
+              else
+                git checkout -B "$REF_NAME" "origin/$REF_NAME"
+              fi
+            else
+              echo "📂 Repository exists, pulling latest changes..."
+              cd ~/ploscope/$APP_NAME
+              git fetch --prune --tags origin
+              if [ "$REF_TYPE" = "tag" ]; then
+                git checkout -f "tags/$REF_NAME"
+              else
+                git checkout -B "$REF_NAME" "origin/$REF_NAME"
+              fi
+            fi
+
+            # Final check before starting services
+            echo "🔍 Final network check before starting services..."
+            if ! docker network inspect plo-network-cloud >/dev/null 2>&1; then
+              echo "❌ Network plo-network-cloud not found before starting services!"
+              echo "📋 Available networks:"
+              docker network ls
+              exit 1
+            fi
+            echo "✅ Network plo-network-cloud confirmed before starting services."
+
+            docker compose up -d rabbitmq
+
+            echo "📋 Checking RabbitMQ container status..."
+            docker ps | grep rabbitmq || echo "No RabbitMQ containers running"
+
+            echo "📋 Waiting for RabbitMQ to be healthy..."
+            docker compose logs rabbitmq | tail -10 || echo "Could not get RabbitMQ logs"
+
+            echo "🔧 Starting Bootstrap script"
+            echo "   Using container: $RABBITMQ_CONTAINER"
+            ./scripts/bootstrap-rabbitmq.sh "$RABBITMQ_CONTAINER" "$RABBITMQ_USER" "$RABBITMQ_PASS" "$RABBITMQ_VHOST" "$RABBITMQ_MAIN_EXCHANGE" "$RABBITMQ_DLQ_EXCHANGE"
+
+            echo "📋 Starting rabbitmq-init container..."
+            docker compose up rabbitmq-init
+
+                        echo "📋 rabbitmq-init container completed, checking status..."
+            docker ps -a | grep rabbitmq-init || echo "rabbitmq-init container not found"
+
+            # Check the exit code of the rabbitmq-init container
+            RABBITMQ_INIT_CONTAINER="rabbitmq-init-${{ inputs.environment }}"
+            if docker inspect $RABBITMQ_INIT_CONTAINER >/dev/null 2>&1; then
+              EXIT_CODE=$(docker inspect -f '{{.State.ExitCode}}' $RABBITMQ_INIT_CONTAINER 2>/dev/null)
+              if [ "$EXIT_CODE" != "0" ]; then
+                echo "❌ rabbitmq-init container exited with code $EXIT_CODE"
+                echo "📋 Container logs:"
+                docker logs $RABBITMQ_INIT_CONTAINER || echo "Could not retrieve logs"
+                echo "📋 Container inspect:"
+                docker inspect $RABBITMQ_INIT_CONTAINER | head -20 || echo "Could not inspect container"
+                exit 1
+              else
+                echo "✅ rabbitmq-init container completed successfully."
+              fi
+            else
+              echo "❌ rabbitmq-init container not found"
+              echo "📋 Available containers:"
+              docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Image}}" | grep -i rabbit || echo "No RabbitMQ containers found"
+              exit 1
+            fi

@@ -1,0 +1,43 @@
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+name = "plosolver-protos"
+version = "1.0.0"
+description = "PLOSolver Protocol Buffer definitions for Python"
+authors = ["PLOSolver Team <hello@plosolver.com>"]
+license = "All Rights Reserved"
+readme = "README.md"
+packages = [{include = "plosolver_protos", from = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+grpcio = "^1.62.0"
+grpcio-tools = "^1.62.0"
+protobuf = "^4.0.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0.0"
+black = "^23.0.0"
+flake8 = "^6.0.0"
+
+[tool.poetry.urls]
+"Homepage" = "https://github.com/plosolver/ploscope"
+"Repository" = "https://github.com/plosolver/ploscope"
+
+[[tool.poetry.source]]
+name = "nexus-internal"
+url = "https://nexus.ploscope.com/repository/pypi-internal/simple"
+priority = "supplemental"
+
+[tool.black]
+line-length = 120
+target-version = ['py311']
+
+[tool.flake8]
+max-line-length = 120
+exclude = ["src/plosolver_protos/generated/"]
+ignore = ["E203", "W503", "E402"]
+
+

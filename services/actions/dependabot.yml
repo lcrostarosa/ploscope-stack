@@ -1,0 +1,149 @@
+version: 2
+updates:
+  # Frontend dependencies (npm)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "@lucascrostarosa"
+    assignees:
+      - "@lucascrostarosa"
+    commit-message:
+      prefix: "chore"
+      prefix-development: "chore"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "frontend"
+    ignore:
+      # Ignore major version updates for these packages
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-dom"
+        update-types: ["version-update:semver-major"]
+    groups:
+      react-ecosystem:
+        patterns:
+          - "react*"
+          - "@types/react*"
+      testing-tools:
+        patterns:
+          - "@testing-library/*"
+          - "jest*"
+      build-tools:
+        patterns:
+          - "webpack*"
+          - "babel*"
+          - "@babel/*"
+
+  # Backend dependencies (pip)
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "@lucascrostarosa"
+    assignees:
+      - "@lucascrostarosa"
+    commit-message:
+      prefix: "chore"
+      prefix-development: "chore"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "backend"
+    ignore:
+      # Ignore major version updates for critical packages
+      - dependency-name: "flask"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "sqlalchemy"
+        update-types: ["version-update:semver-major"]
+    groups:
+      flask-ecosystem:
+        patterns:
+          - "flask*"
+          - "Flask*"
+      database:
+        patterns:
+          - "sqlalchemy*"
+          - "psycopg*"
+          - "alembic"
+      security:
+        patterns:
+          - "*auth*"
+          - "*jwt*"
+          - "*bcrypt*"
+
+  # Backend test dependencies
+  - package-ecosystem: "pip"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "@lucascrostarosa"
+    assignees:
+      - "@lucascrostarosa"
+    commit-message:
+      prefix: "chore"
+      prefix-development: "chore"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "backend"
+      - "testing"
+    groups:
+      testing-tools:
+        patterns:
+          - "pytest*"
+          - "factory-boy"
+          - "responses"
+
+  # Docker dependencies
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "@lucascrostarosa"
+    assignees:
+      - "@lucascrostarosa"
+    commit-message:
+      prefix: "chore"
+      prefix-development: "chore"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "docker"
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "@lucascrostarosa"
+    assignees:
+      - "@lucascrostarosa"
+    commit-message:
+      prefix: "chore"
+      prefix-development: "chore"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "github-actions" 

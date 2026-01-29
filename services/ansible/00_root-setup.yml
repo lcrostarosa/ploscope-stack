@@ -1,0 +1,41 @@
+---
+- name: Initial Hetzner server setup (ONE-TIME ONLY)
+  hosts: root_servers
+  become: yes
+  vars_files:
+    - variables/vars.yml    
+ 
+  pre_tasks:
+    - name: Display critical warning
+      debug:
+        msg: |
+          ⚠️  CRITICAL WARNING ⚠️
+          
+          This playbook will:
+          1. Install Docker and required packages
+          2. Create appuser account
+          3. Remove root SSH access
+          4. Configure appuser for deployment
+          
+          This is a ONE-TIME setup. After running this:
+          - Root SSH access will be disabled
+          - You will only be able to connect as 'appuser'
+          - Make sure you have the SSH key properly configured
+          
+          Are you sure you want to continue?
+          
+          If you need to abort, press Ctrl+C now.
+      
+    - name: Pause for user confirmation
+      pause:
+        prompt: "Type 'yes' to continue with 01_root access removal, or 'no' to abort"
+      register: user_confirmation
+      
+    - name: Check user confirmation
+      fail:
+        msg: "Setup aborted by user"
+      when: user_confirmation.user_input != "yes"
+ 
+  tasks:
+    - import_tasks: playbooks/01_root/00_os.yml
+    - import_tasks: playbooks/01_root/02_disable_root_access.yml

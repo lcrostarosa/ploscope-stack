@@ -1,0 +1,7 @@
+.DS_Store
+*.production
+.env
+*.db
+data/
+*.log
+variables/vars.yml

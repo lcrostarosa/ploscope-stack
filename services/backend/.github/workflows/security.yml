@@ -1,0 +1,157 @@
+name: Security Scans
+
+on:
+  workflow_run:
+    workflows: ["Unified CI/CD Pipeline"]
+    types:
+      - completed
+    branches: [main, master, develop]
+  workflow_dispatch:
+  schedule:
+    # Run security scans weekly on Sundays at 2 AM UTC
+    - cron: '0 2 * * 0'
+
+env:
+  REGISTRY: docker.io
+  IMAGE_NAME: ploscope
+
+jobs:
+  security:
+    name: Security Scans
+    runs-on: ${{ vars.GHA_RUNNER }}
+    permissions:
+      contents: read
+      security-events: write
+      pull-requests: write
+      issues: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: |
+            src/backend/requirements.txt
+            src/backend/requirements-dev.txt
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: src/frontend/package-lock.json
+      - name: Cache Python dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            src/backend/.venv
+            ~/.cache/pip
+            ~/.cache/bandit
+            ~/.cache/safety
+            ~/.cache/semgrep
+          key: ${{ runner.os }}-security-pip-${{ hashFiles('src/backend/requirements*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-security-pip-
+      - name: Cache Node.js dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            src/frontend/node_modules
+            ~/.npm
+            ~/.cache/eslint
+          key: ${{ runner.os }}-security-node-${{ hashFiles('src/frontend/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-security-node-
+      - name: Cache security tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/trivy
+            ~/.cache/semgrep
+          key: ${{ runner.os }}-security-tools-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-security-tools-
+      - name: Install security tools
+        run: |
+          pip install bandit safety pip-audit semgrep
+          cd src/frontend && npm ci && npm install --save-dev eslint-plugin-security eslint-plugin-react-hooks
+      - name: Run security scans
+        run: |
+          cd src/frontend
+          npx eslint src/ --ext .js,.jsx --format json --output-file eslint-results.json || true
+          npm audit --audit-level=moderate --json > npm-audit-results.json || true
+          npm audit --audit-level=moderate > npm-audit-readable.txt || true
+          cd ../backend
+          bandit -r . -f json -o bandit-results.json || true
+          safety check --json --output safety-results.json || true
+          pip-audit --format=json --output=pip-audit-results.json || true
+          semgrep --config=auto --json --output=semgrep-results.json . || true
+      - name: Run Trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-fs-results.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          limit-severities-for-sarif: true
+        continue-on-error: true
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: |
+          always() &&
+          (github.event_name != 'pull_request' ||
+           (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository))
+        with:
+          sarif_file: 'trivy-fs-results.sarif'
+          category: 'trivy-filesystem'
+        continue-on-error: true
+      - name: Upload security artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-results-${{ github.sha }}
+          path: |
+            *-results.json
+            *-readable.txt
+            *.sarif
+          retention-days: 30
+      - name: Create security summary
+        if: always()
+        run: |
+          echo "## Security Scan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Check for critical/high vulnerabilities
+          if [ -f "npm-audit-results.json" ]; then
+            echo "### NPM Audit Results" >> $GITHUB_STEP_SUMMARY
+            npm_vulns=$(jq -r '.vulnerabilities | to_entries[] | select(.value.severity == "critical" or .value.severity == "high") | .key' npm-audit-results.json 2>/dev/null || echo "")
+            if [ -n "$npm_vulns" ]; then
+              echo "⚠️ **High/Critical vulnerabilities found:**" >> $GITHUB_STEP_SUMMARY
+              echo "$npm_vulns" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "✅ No high/critical vulnerabilities found" >> $GITHUB_STEP_SUMMARY
+            fi
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ -f "safety-results.json" ]; then
+            echo "### Python Safety Results" >> $GITHUB_STEP_SUMMARY
+            safety_vulns=$(jq -r '.vulnerabilities[] | select(.severity == "HIGH" or .severity == "CRITICAL") | .package' safety-results.json 2>/dev/null || echo "")
+            if [ -n "$safety_vulns" ]; then
+              echo "⚠️ **High/Critical vulnerabilities found:**" >> $GITHUB_STEP_SUMMARY
+              echo "$safety_vulns" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "✅ No high/critical vulnerabilities found" >> $GITHUB_STEP_SUMMARY
+            fi
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ -f "semgrep-results.json" ]; then
+            echo "### Semgrep Results" >> $GITHUB_STEP_SUMMARY
+            semgrep_issues=$(jq -r '.results[] | select(.extra.severity == "ERROR" or .extra.severity == "WARNING") | .check_id' semgrep-results.json 2>/dev/null | wc -l)
+            echo "🔍 **Security issues found:** $semgrep_issues" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi

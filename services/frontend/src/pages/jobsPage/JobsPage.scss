@@ -1,0 +1,104 @@
+@use '../../styles/Variables' as *;
+
+.jobs-page-container {
+  padding: 2rem;
+  max-width: 90%;
+  margin: 0 auto;
+}
+
+.jobs-page-content {
+  .job-status-panel {
+    border: none;
+    box-shadow: none;
+    padding: 0;
+  }
+}
+
+// Welcome Section
+.jobs-welcome-section {
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  padding: 2rem;
+  margin-bottom: 2rem;
+  border: 1px solid var(--border-color);
+  box-shadow: 0 4px 12px var(--shadow-light);
+}
+
+.jobs-welcome-title {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.jobs-welcome-description {
+  font-size: 1.1rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: 2rem;
+}
+
+.jobs-welcome-features {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1rem;
+}
+
+.welcome-feature {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  background: var(--bg-primary);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: var(--bg-tertiary);
+    border-color: var(--primary-color);
+    transform: translateY(-1px);
+  }
+}
+
+.feature-icon {
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+
+.welcome-feature span:last-child {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+// Responsive Design
+@media (max-width: 768px) {
+  .jobs-page-container {
+    padding: 1rem;
+  }
+
+  .jobs-welcome-section {
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .jobs-welcome-title {
+    font-size: 1.75rem;
+  }
+
+  .jobs-welcome-description {
+    font-size: 1rem;
+  }
+
+  .jobs-welcome-features {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+
+  .welcome-feature {
+    padding: 0.5rem;
+  }
+}

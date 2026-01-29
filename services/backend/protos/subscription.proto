@@ -1,0 +1,116 @@
+syntax = "proto3";
+
+package plosolver.subscription;
+
+option go_package = "github.com/plosolver/backend/protos/subscription";
+option java_multiple_files = true;
+option java_package = "com.plosolver.grpc.subscription";
+option java_outer_classname = "SubscriptionProto";
+
+import "google/protobuf/timestamp.proto";
+import "common.proto";
+
+// =============================================================================
+// Subscription Service
+// =============================================================================
+
+service SubscriptionService {
+  rpc GetSubscription(GetSubscriptionRequest) returns (GetSubscriptionResponse);
+  rpc CreateSubscription(CreateSubscriptionRequest) returns (CreateSubscriptionResponse);
+  rpc UpdateSubscription(UpdateSubscriptionRequest) returns (UpdateSubscriptionResponse);
+  rpc CancelSubscription(CancelSubscriptionRequest) returns (CancelSubscriptionResponse);
+  rpc GetUsage(GetUsageRequest) returns (GetUsageResponse);
+  rpc GetBillingHistory(GetBillingHistoryRequest) returns (GetBillingHistoryResponse);
+}
+
+message GetSubscriptionRequest {
+  string user_id = 1;
+}
+
+message GetSubscriptionResponse {
+  Subscription subscription = 1;
+  plosolver.common.Error error = 2;
+}
+
+message CreateSubscriptionRequest {
+  string user_id = 1;
+  string plan_id = 2;
+  string payment_method_id = 3;
+}
+
+message CreateSubscriptionResponse {
+  Subscription subscription = 1;
+  plosolver.common.Error error = 2;
+}
+
+message UpdateSubscriptionRequest {
+  string user_id = 1;
+  string plan_id = 2;
+}
+
+message UpdateSubscriptionResponse {
+  Subscription subscription = 1;
+  plosolver.common.Error error = 2;
+}
+
+message CancelSubscriptionRequest {
+  string user_id = 1;
+  bool immediate = 2;
+}
+
+message CancelSubscriptionResponse {
+  bool success = 1;
+  plosolver.common.Error error = 2;
+}
+
+message GetUsageRequest {
+  string user_id = 1;
+  string period = 2;
+}
+
+message GetUsageResponse {
+  Usage usage = 1;
+  plosolver.common.Error error = 2;
+}
+
+message GetBillingHistoryRequest {
+  string user_id = 1;
+  plosolver.common.PaginationRequest pagination = 2;
+}
+
+message GetBillingHistoryResponse {
+  repeated BillingRecord records = 1;
+  plosolver.common.PaginationResponse pagination = 2;
+  plosolver.common.Error error = 3;
+}
+
+message Subscription {
+  string id = 1;
+  string user_id = 2;
+  string plan_id = 3;
+  string status = 4;
+  google.protobuf.Timestamp current_period_start = 5;
+  google.protobuf.Timestamp current_period_end = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp updated_at = 8;
+  google.protobuf.Timestamp canceled_at = 9;
+}
+
+message Usage {
+  string user_id = 1;
+  string period = 2;
+  int32 total_analyses = 3;
+  int32 analyses_used = 4;
+  int32 analyses_remaining = 5;
+  double cost = 6;
+}
+
+message BillingRecord {
+  string id = 1;
+  string user_id = 2;
+  string description = 3;
+  double amount = 4;
+  string currency = 5;
+  string status = 6;
+  google.protobuf.Timestamp created_at = 7;
+}

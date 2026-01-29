@@ -1,0 +1,155 @@
+---
+# It is triggered by a push to the master branch.
+# It is also triggered by a workflow_dispatch event.
+# The workflow will create a new tag and release the database migrations to the Docker Hub.
+# The workflow will also create a new release on the GitHub repository.
+name: Release
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: 'Release type'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      prerelease:
+        description: 'Is this a prerelease?'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  tag_build_release:
+    runs-on: ${{ vars.GHA_RUNNER }}
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.PAT }}
+      - name: Install poetry
+        if: ${{ vars.GHA_RUNNER }} != 'self-hosted'
+        uses: abatilo/actions-poetry@v4
+
+      - name: Install poetry manually (fallback for self-hosted runners)
+        if: ${{ vars.GHA_RUNNER }} == 'self-hosted'
+        run: |
+          curl -sL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to registry
+        uses: docker/login-action@v3
+        with:
+          registry: docker.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set tag
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: docker.io/ploscope/db-init
+          tags: |
+            type=raw,value=staging,enable=${{ github.ref == 'refs/heads/master' }}
+            type=raw,value=master,enable=${{ github.ref == 'refs/heads/master' }}
+            type=raw,value=production,enable=${{ github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/') }}
+            type=semver,pattern={{version}},enable=${{ startsWith(github.ref, 'refs/tags/') }}
+
+      - name: Build and push AMD64
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: 'Dockerfile'
+          push: true
+          platforms: linux/amd64
+          tags: ${{ steps.meta.outputs.tags }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Install dependencies
+        run: |
+          poetry install --with dev
+
+      - name: Create release
+        id: release
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # Manual release
+            current_version=$(poetry version -s)
+            release_type="${{ github.event.inputs.release_type }}"
+
+            case "$release_type" in
+              "major")
+                poetry version major
+                ;;
+              "minor")
+                poetry version minor
+                ;;
+              "patch")
+                poetry version patch
+                ;;
+            esac
+
+            new_version=$(poetry version -s)
+            tag="v$new_version"
+
+            # Commit version bump
+            git add pyproject.toml
+            git commit -m "chore: bump version to $new_version [skip ci]"
+
+            # Create tag
+            git tag -a $tag -m "Release $tag"
+            git push origin $tag
+            git push origin HEAD
+
+            # Create GitHub release
+            gh release create $tag \
+              --title "Release $tag" \
+              --generate-notes \
+              ${{ github.event.inputs.prerelease == 'true' && '--prerelease' || '' }}
+          else
+            # Automatic release based on conventional commits
+            # For now, we'll do a patch release on master pushes
+            # You can integrate with semantic-release-python if needed
+            current_version=$(poetry version -s)
+            poetry version patch
+            new_version=$(poetry version -s)
+            tag="v$new_version"
+
+            # Commit version bump
+            git add pyproject.toml
+            git commit -m "chore: bump version to $new_version [skip ci]"
+
+            # Create tag
+            git tag -a $tag -m "Release $tag"
+            git push origin $tag
+            git push origin HEAD
+
+            # Create GitHub release
+            gh release create $tag \
+              --title "Release $tag" \
+              --generate-notes
+          fi
+
+          echo "tag=$tag" >> $GITHUB_OUTPUT
+          echo "version=$new_version" >> $GITHUB_OUTPUT
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT }}
+          GH_TOKEN: ${{ secrets.PAT }}

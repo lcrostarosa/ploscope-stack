@@ -1,0 +1,11 @@
+repos:
+  - repo: local
+    hooks:
+      - id: ci-pipeline
+        name: Run CI Pipeline
+        entry: make ci-pipeline
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [commit, push]
+        description: "Run the full CI pipeline locally before commit/push" 

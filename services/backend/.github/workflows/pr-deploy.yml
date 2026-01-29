@@ -1,0 +1,370 @@
+name: PR Deployment to Staging
+
+on:
+  issue_comment:
+    types: [created]
+
+env:
+  REGISTRY: docker.io
+  IMAGE_NAME: ploscope
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  actions: read
+  deployments: write
+  checks: write
+  packages: read
+  pages: write
+  discussions: write
+
+jobs:
+  deploy-staging:
+    name: Deploy PR to Staging
+    runs-on: ${{ vars.GHA_RUNNER }}
+    timeout-minutes: 5
+    # Only run when comment contains "Deploy staging" on a PR
+    if: |
+      github.event.issue.pull_request &&
+      contains(github.event.comment.body, 'Deploy staging')
+    environment: staging
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.head_ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate required secrets
+        run: |
+          if [ -z "${{ secrets.SSH_PRIVATE_KEY }}" ]; then echo "Missing required secret: SSH_PRIVATE_KEY"; exit 1; fi
+          if [ -z "${{ secrets.SSH_HOST }}" ]; then echo "Missing required secret: SSH_HOST"; exit 1; fi
+          if [ -z "${{ secrets.SSH_USER }}" ]; then echo "Missing required secret: SSH_USER"; exit 1; fi
+          if [ -z "${{ secrets.APP_PATH }}" ]; then echo "Missing required secret: APP_PATH"; exit 1; fi
+
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Add server to known hosts
+        run: |
+          ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Determine deployment info
+        id: deploy-info
+        run: |
+          PR_NUMBER="${{ github.event.number }}"
+          if [ -z "$PR_NUMBER" ]; then
+            echo "Error: Could not determine PR Number."
+            exit 1
+          fi
+          echo "PR_NUMBER=$PR_NUMBER" >> $GITHUB_OUTPUT
+
+          BRANCH="${{ github.head_ref }}"
+          echo "BRANCH=$BRANCH" >> $GITHUB_OUTPUT
+
+          TAG="pr-$PR_NUMBER"
+          echo "TAG=$TAG" >> $GITHUB_OUTPUT
+
+          echo "🚀 Deploying PR #$PR_NUMBER to staging"
+          echo "🌿 Branch: $BRANCH"
+          echo "🏷️  Tag: $TAG"
+
+      - name: Comment on PR (initial)
+        id: initial-comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tag = '${{ steps.deploy-info.outputs.TAG }}';
+            const branch = '${{ steps.deploy-info.outputs.BRANCH }}';
+            const runId = context.runId;
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${runId}`;
+
+            const comment = await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `🚀 **Staging deployment started!**
+
+              **Details:**
+              - 🌿 Branch: \`${branch}\`
+              - 🏷️  Requested Tag: \`${tag}\`
+              - 🌐 Environment: Staging
+              - 🔗 [View Deployment Progress](${runUrl})
+
+              Deployment is in progress... ⏳`
+            });
+
+            // Store the comment ID for later updates
+            core.setOutput('comment_id', comment.data.id);
+
+      - name: Deploy to staging server
+        id: deploy
+        run: |
+          TAG="${{ steps.deploy-info.outputs.TAG }}"
+          BRANCH="${{ steps.deploy-info.outputs.BRANCH }}"
+          HOST="${{ secrets.SSH_HOST }}"
+          USER="${{ secrets.SSH_USER }}"
+          APP_PATH="${{ secrets.APP_PATH }}"
+
+          echo "🚀 Starting staging deployment for PR #${{ steps.deploy-info.outputs.PR_NUMBER }}..."
+          echo "📦 Tag: $TAG"
+          echo "🌿 Branch: ${BRANCH}"
+
+          DEPLOY_OUTPUT=$(ssh "$USER@$HOST" "REGISTRY=${REGISTRY} IMAGE_NAME=${{ env.IMAGE_NAME }} TAG=\"$TAG\" BRANCH=\"$BRANCH\" PR_NUMBER=${{ steps.deploy-info.outputs.PR_NUMBER }} APP_PATH=\"$APP_PATH\" GITHUB_REPOSITORY='${{ github.repository }}' GITHUB_TOKEN='${{ secrets.GITHUB_TOKEN }}' bash -s" <<'REMOTE_SCRIPT'
+            set -e
+
+            echo "📦 Updating code from repository..."
+            cd "$APP_PATH"
+            git fetch origin
+            git reset --hard "origin/$BRANCH"
+
+            echo "🐳 Checking and pulling images from registry..."
+            # Check each image individually and use staging fallback if needed
+            if docker manifest inspect "${REGISTRY}/${IMAGE_NAME}/frontend:${TAG}" >/dev/null 2>&1; then
+              echo "✅ Frontend image found: ${TAG}"
+              FRONTEND_TAG="${TAG}"
+              docker pull "${REGISTRY}/${IMAGE_NAME}/frontend:${TAG}"
+            else
+              echo "⚠️  Frontend image not found, using staging"
+              FRONTEND_TAG="staging"
+              docker pull "${REGISTRY}/${IMAGE_NAME}/frontend:staging"
+            fi
+
+            if docker manifest inspect "${REGISTRY}/${IMAGE_NAME}/backend:${TAG}" >/dev/null 2>&1; then
+              echo "✅ Backend image found: ${TAG}"
+              BACKEND_TAG="${TAG}"
+              docker pull "${REGISTRY}/${IMAGE_NAME}/backend:${TAG}"
+            else
+              echo "⚠️  Backend image not found, using staging"
+              BACKEND_TAG="staging"
+              docker pull "${REGISTRY}/${IMAGE_NAME}/backend:staging"
+            fi
+
+            if docker manifest inspect "${REGISTRY}/${IMAGE_NAME}/celery-worker:${TAG}" >/dev/null 2>&1; then
+              echo "✅ Celery image found: ${TAG}"
+              CELERY_TAG="${TAG}"
+              docker pull "${REGISTRY}/${IMAGE_NAME}/celery-worker:${TAG}"
+            else
+              echo "⚠️  Celery image not found, using staging"
+              CELERY_TAG="staging"
+              docker pull "${REGISTRY}/${IMAGE_NAME}/celery-worker:staging"
+            fi
+
+            if docker manifest inspect "${REGISTRY}/${IMAGE_NAME}/db-init:${TAG}" >/dev/null 2>&1; then
+              echo "✅ DB Init image found: ${TAG}"
+              DB_INIT_TAG="${TAG}"
+              docker pull "${REGISTRY}/${IMAGE_NAME}/db-init:${TAG}"
+            else
+              echo "⚠️  DB Init image not found, using staging"
+              DB_INIT_TAG="staging"
+              docker pull "${REGISTRY}/${IMAGE_NAME}/db-init:staging"
+            fi
+
+            if docker manifest inspect "${REGISTRY}/${IMAGE_NAME}/rabbitmq-init:${TAG}" >/dev/null 2>&1; then
+              echo "✅ RabbitMQ Init image found: ${TAG}"
+              RABBITMQ_INIT_TAG="${TAG}"
+              docker pull "${REGISTRY}/${IMAGE_NAME}/rabbitmq-init:${TAG}"
+            else
+              echo "⚠️  RabbitMQ Init image not found, using staging"
+              RABBITMQ_INIT_TAG="staging"
+              docker pull "${REGISTRY}/${IMAGE_NAME}/rabbitmq-init:staging"
+            fi
+
+            echo "🔧 Deploying application..."
+            echo "Using tags: Frontend=${FRONTEND_TAG}, Backend=${BACKEND_TAG}, Celery=${CELERY_TAG}, DB-Init=${DB_INIT_TAG}, RabbitMQ-Init=${RABBITMQ_INIT_TAG}"
+
+            # Set environment variables for docker compose
+            export FRONTEND_TAG="${FRONTEND_TAG}"
+            export BACKEND_TAG="${BACKEND_TAG}"
+            export CELERY_TAG="${CELERY_TAG}"
+            export DB_INIT_TAG="${DB_INIT_TAG}"
+            export RABBITMQ_INIT_TAG="${RABBITMQ_INIT_TAG}"
+
+            GITHUB_REPOSITORY="$GITHUB_REPOSITORY" FRONTEND_TAG="${FRONTEND_TAG}" BACKEND_TAG="${BACKEND_TAG}" CELERY_TAG="${CELERY_TAG}" DB_INIT_TAG="${DB_INIT_TAG}" RABBITMQ_INIT_TAG="${RABBITMQ_INIT_TAG}" docker compose -f docker-compose.staging.yml --env-file env.staging down
+            GITHUB_REPOSITORY="$GITHUB_REPOSITORY" FRONTEND_TAG="${FRONTEND_TAG}" BACKEND_TAG="${BACKEND_TAG}" CELERY_TAG="${CELERY_TAG}" DB_INIT_TAG="${DB_INIT_TAG}" RABBITMQ_INIT_TAG="${RABBITMQ_INIT_TAG}" docker compose -f docker-compose.staging.yml --env-file env.staging up -d
+
+            echo "🧹 Cleaning up unused images..."
+            docker image prune -f
+
+            echo "✅ Staging deployment completed successfully!"
+            echo "📦 Images used:"
+            echo "  Frontend: ${REGISTRY}/${IMAGE_NAME}/frontend:${FRONTEND_TAG}"
+            echo "  Backend: ${REGISTRY}/${IMAGE_NAME}/backend:${BACKEND_TAG}"
+            echo "  Celery: ${REGISTRY}/${IMAGE_NAME}/celery-worker:${CELERY_TAG}"
+            echo "  DB Init: ${REGISTRY}/${IMAGE_NAME}/db-init:${DB_INIT_TAG}"
+            echo "  RabbitMQ Init: ${REGISTRY}/${IMAGE_NAME}/rabbitmq-init:${RABBITMQ_INIT_TAG}"
+          REMOTE_SCRIPT
+          )
+
+          # Extract the actual tags used from the deployment output
+          FRONTEND_TAG=$(echo "$DEPLOY_OUTPUT" | grep "Frontend:" | sed 's/.*frontend://')
+          BACKEND_TAG=$(echo "$DEPLOY_OUTPUT" | grep "Backend:" | sed 's/.*backend://')
+          CELERY_TAG=$(echo "$DEPLOY_OUTPUT" | grep "Celery:" | sed 's/.*celery-worker://')
+          DB_INIT_TAG=$(echo "$DEPLOY_OUTPUT" | grep "DB Init:" | sed 's/.*db-init://')
+          RABBITMQ_INIT_TAG=$(echo "$DEPLOY_OUTPUT" | grep "RabbitMQ Init:" | sed 's/.*rabbitmq-init://')
+
+          echo "frontend_tag=$FRONTEND_TAG" >> $GITHUB_OUTPUT
+          echo "backend_tag=$BACKEND_TAG" >> $GITHUB_OUTPUT
+          echo "celery_tag=$CELERY_TAG" >> $GITHUB_OUTPUT
+          echo "db_init_tag=$DB_INIT_TAG" >> $GITHUB_OUTPUT
+          echo "rabbitmq_init_tag=$RABBITMQ_INIT_TAG" >> $GITHUB_OUTPUT
+
+          echo "Deployment completed with tags:"
+          echo "Frontend: $FRONTEND_TAG"
+          echo "Backend: $BACKEND_TAG"
+          echo "Celery: $CELERY_TAG"
+          echo "DB Init: $DB_INIT_TAG"
+          echo "RabbitMQ Init: $RABBITMQ_INIT_TAG"
+
+      - name: Health check
+        run: |
+          echo "🏥 Performing health check..."
+
+          # Check if the application is responding
+          for i in {1..10}; do
+            if curl -f -s https://ploscope.com > /dev/null; then
+              echo "✅ Application is healthy and responding"
+              break
+            else
+              echo "⏳ Waiting for application to be ready... (attempt $i/10)"
+              sleep 15
+            fi
+          done
+
+          # Final health check
+          if ! curl -f -s https://ploscope.com > /dev/null; then
+            echo "❌ Application health check failed"
+            exit 1
+          fi
+
+      - name: Update PR comment (success)
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tag = '${{ steps.deploy-info.outputs.TAG }}';
+            const branch = '${{ steps.deploy-info.outputs.BRANCH }}';
+            const frontendTag = '${{ steps.deploy.outputs.frontend_tag }}';
+            const backendTag = '${{ steps.deploy.outputs.backend_tag }}';
+            const celeryTag = '${{ steps.deploy.outputs.celery_tag }}';
+            const dbInitTag = '${{ steps.deploy.outputs.db_init_tag }}';
+            const rabbitmqInitTag = '${{ steps.deploy.outputs.rabbitmq_init_tag }}';
+            const commentId = '${{ steps.initial-comment.outputs.comment_id }}';
+            const runId = context.runId;
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${runId}`;
+
+            let fallbackInfo = '';
+            const services = [
+              { name: 'Frontend', tag: frontendTag },
+              { name: 'Backend', tag: backendTag },
+              { name: 'Celery', tag: celeryTag },
+              { name: 'DB Init', tag: dbInitTag },
+              { name: 'RabbitMQ Init', tag: rabbitmqInitTag }
+            ];
+
+            const fallbackServices = services.filter(service => service.tag !== tag);
+            if (fallbackServices.length > 0) {
+              fallbackInfo = `
+
+              **⚠️ Fallback Information:**
+              - Requested tag: \`${tag}\`
+              - Services using staging fallback: ${fallbackServices.map(s => s.name).join(', ')}`;
+            }
+
+            try {
+              // Update the initial comment using the stored comment ID
+              await github.rest.issues.updateComment({
+                comment_id: commentId,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: `🎉 **Staging deployment successful!**
+
+                **Details:**
+                - 🌿 Branch: \`${branch}\`
+                - 🏷️  Requested Tag: \`${tag}\`
+                - 🌐 Environment: Staging
+                - 🔗 Application: https://ploscope.com
+                - 📦 Images deployed:
+                  - Frontend: \`${frontendTag}\`
+                  - Backend: \`${backendTag}\`
+                  - Celery: \`${celeryTag}\`
+                  - DB Init: \`${dbInitTag}\`
+                  - RabbitMQ Init: \`${rabbitmqInitTag}\`
+                - 📋 [View Deployment Logs](${runUrl})${fallbackInfo}
+
+                Your changes are now live on staging! ✅`
+              });
+            } catch (error) {
+              // Fallback: create new comment if update fails
+              console.log('Failed to update initial comment, creating new comment:', error.message);
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: `🎉 **Staging deployment successful!**
+
+                **Details:**
+                - 🌿 Branch: \`${branch}\`
+                - 🏷️  Requested Tag: \`${tag}\`
+                - 🌐 Environment: Staging
+                - 🔗 Application: https://ploscope.com
+                - 📦 Images deployed:
+                  - Frontend: \`${frontendTag}\`
+                  - Backend: \`${backendTag}\`
+                  - Celery: \`${celeryTag}\`
+                  - DB Init: \`${dbInitTag}\`
+                  - RabbitMQ Init: \`${rabbitmqInitTag}\`
+                - 📋 [View Deployment Logs](${runUrl})${fallbackInfo}
+
+                Your changes are now live on staging! ✅`
+              });
+            }
+
+      - name: Update PR comment (failure)
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tag = '${{ steps.deploy-info.outputs.TAG }}';
+            const branch = '${{ steps.deploy-info.outputs.BRANCH }}';
+            const commentId = '${{ steps.initial-comment.outputs.comment_id }}';
+            const runId = context.runId;
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${runId}`;
+
+            try {
+              // Update the initial comment using the stored comment ID
+              await github.rest.issues.updateComment({
+                comment_id: commentId,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: `❌ **Staging deployment failed!**
+
+                **Details:**
+                - 🌿 Branch: \`${branch}\`
+                - 🏷️  Tag: \`${tag}\`
+                - 🌐 Environment: Staging
+                - 📋 [View Deployment Logs](${runUrl})
+
+                Please check the deployment logs for more details. 🔍`
+              });
+            } catch (error) {
+              // Fallback: create new comment if update fails
+              console.log('Failed to update initial comment, creating new comment:', error.message);
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: `❌ **Staging deployment failed!**
+
+                **Details:**
+                - 🌿 Branch: \`${branch}\`
+                - 🏷️  Tag: \`${tag}\`
+                - 🌐 Environment: Staging
+                - 📋 [View Deployment Logs](${runUrl})
+
+                Please check the deployment logs for more details. 🔍`
+              });
+            }

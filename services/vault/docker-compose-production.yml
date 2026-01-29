@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  vault:
+    image: hashicorp/vault:1.15.0
+    container_name: plo-solver-vault-prod
+    environment:
+      - VAULT_ADDR=https://vault.ploscope.com
+      - VAULT_SKIP_VERIFY=true
+    volumes:
+      - ./config:/vault/config
+      - vault-data:/vault/file
+      - ./scripts:/vault/scripts
+      - ./logs:/vault/logs
+    cap_add:
+      - IPC_LOCK
+    command: vault server -config=/vault/config/vault.hcl
+    restart: unless-stopped
+    networks:
+      vault-network:
+        ipv4_address: 172.19.0.2
+    # Production security settings
+    security_opt:
+      - no-new-privileges:true
+    read_only: false
+    tmpfs:
+      - /tmp:noexec,nosuid,size=65536k
+
+volumes:
+  vault-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./vault-prod-data
+
+networks:
+  plo-network:
+    external: true

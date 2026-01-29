@@ -1,0 +1,289 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: PLOSolver Alerts
+    folder: Alerts
+    interval: 10s
+    rules:
+      - uid: traefik-target-down
+        title: Traefik metrics target is DOWN
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 120
+              to: 0
+            datasourceUid: prometheus
+            model:
+              editorMode: code
+              expr: up{job="traefik"} == 0
+              instant: true
+              range: false
+        annotations:
+          summary: "Traefik metrics target is DOWN"
+          description: "Prometheus cannot scrape Traefik metrics at traefik:8082"
+        labels:
+          severity: critical
+        for: 2m
+        isPaused: true
+
+      - uid: traefik-5xx-rate-high
+        title: Traefik 5xx rate high
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              editorMode: code
+              expr: sum(rate(traefik_entrypoint_requests_total{code=~"5.."}[5m]))
+              instant: true
+              range: false
+        annotations:
+          summary: "Elevated 5xx responses across entrypoints"
+          description: ">
+            Threshold: > 0.1 req/s over 5m. Increase indicates errors being served."
+        labels:
+          severity: warning
+        for: 3m
+        isPaused: true
+        conditions:
+          - evaluator:
+              params:
+                - 0.1
+              type: gt
+            operator:
+              type: and
+            query:
+              params:
+                - A
+            reducer:
+              type: last
+            type: query
+
+      - uid: traefik-p95-latency-high
+        title: Traefik p95 latency high
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              editorMode: code
+              expr: histogram_quantile(0.95, rate(traefik_entrypoint_request_duration_seconds_bucket[5m]))
+              instant: true
+              range: false
+        annotations:
+          summary: "p95 response time is high"
+          description: ">
+            Threshold: > 2s over 5m. Investigate backend performance or upstream latency."
+        labels:
+          severity: warning
+        for: 5m
+        isPaused: true
+        conditions:
+          - evaluator:
+              params:
+                - 2
+              type: gt
+            operator:
+              type: and
+            query:
+              params:
+                - A
+            reducer:
+              type: last
+            type: query
+
+      - uid: backend-5xx-rate-high
+        title: Backend 5xx rate high
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              editorMode: code
+              expr: sum(rate(traefik_service_requests_total{service="backend@file",code=~"5.."}[5m]))
+              instant: true
+              range: false
+        annotations:
+          summary: "Backend service returning 5xx"
+          description: ">
+            Threshold: > 0.05 req/s over 5m for backend@file"
+        labels:
+          severity: warning
+        for: 3m
+        isPaused: true
+        conditions:
+          - evaluator:
+              params:
+                - 0.05
+              type: gt
+            operator:
+              type: and
+            query:
+              params:
+                - A
+            reducer:
+              type: last
+            type: query
+
+      - uid: frontend-5xx-rate-high
+        title: Frontend 5xx rate high
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              editorMode: code
+              expr: sum(rate(traefik_service_requests_total{service="frontend@file",code=~"5.."}[5m]))
+              instant: true
+              range: false
+        annotations:
+          summary: "Frontend service returning 5xx"
+          description: ">
+            Threshold: > 0.05 req/s over 5m for frontend@file"
+        labels:
+          severity: warning
+        for: 3m
+        isPaused: true
+        conditions:
+          - evaluator:
+              params:
+                - 0.05
+              type: gt
+            operator:
+              type: and
+            query:
+              params:
+                - A
+            reducer:
+              type: last
+            type: query
+
+      - uid: backend-service-down
+        title: Backend service is DOWN
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 120
+              to: 0
+            datasourceUid: prometheus
+            model:
+              editorMode: code
+              expr: up{job="backend"} == 0
+              instant: true
+              range: false
+        annotations:
+          summary: "Backend service is DOWN"
+          description: "Prometheus cannot scrape backend metrics at backend:5001"
+        labels:
+          severity: critical
+        for: 2m
+        isPaused: true
+
+      - uid: frontend-service-down
+        title: Frontend service is DOWN
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 120
+              to: 0
+            datasourceUid: prometheus
+            model:
+              editorMode: code
+              expr: up{job="frontend"} == 0
+              instant: true
+              range: false
+        annotations:
+          summary: "Frontend service is DOWN"
+          description: "Prometheus cannot scrape frontend metrics at frontend:3001"
+        labels:
+          severity: critical
+        for: 2m
+        isPaused: true
+
+      - uid: backend-response-time-high
+        title: Backend response time high
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              editorMode: code
+              expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job="backend"}[5m]))
+              instant: true
+              range: false
+        annotations:
+          summary: "Backend p95 response time is high"
+          description: "Threshold: > 2s over 5m. Investigate backend performance."
+        labels:
+          severity: warning
+        for: 5m
+        isPaused: true
+        conditions:
+          - evaluator:
+              params:
+                - 2
+              type: gt
+            operator:
+              type: and
+            query:
+              params:
+                - A
+            reducer:
+              type: last
+            type: query
+
+      - uid: frontend-response-time-high
+        title: Frontend response time high
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              editorMode: code
+              expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job="frontend"}[5m]))
+              instant: true
+              range: false
+        annotations:
+          summary: "Frontend p95 response time is high"
+          description: "Threshold: > 1s over 5m. Investigate frontend performance."
+        labels:
+          severity: warning
+        for: 5m
+        isPaused: true
+        conditions:
+          - evaluator:
+              params:
+                - 1
+              type: gt
+            operator:
+              type: and
+            query:
+              params:
+                - A
+            reducer:
+              type: last
+            type: query
+
+

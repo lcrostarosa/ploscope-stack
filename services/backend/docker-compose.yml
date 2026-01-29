@@ -1,0 +1,357 @@
+
+
+services:
+  backend:
+    image: ploscope/backend:${BACKEND_TAG:-staging}
+    platform: linux/amd64
+    container_name: backend-${ENVIRONMENT}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      secrets:
+        - nexus_username
+        - nexus_password
+      args:
+        BUILD_ENV: production
+        PIP_INDEX_URL: ${PIP_INDEX_URL}
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST}
+        NEXUS_PYPI_USERNAME: ${NEXUS_PYPI_USERNAME}
+        BUILDKIT_INLINE_CACHE: 1
+    labels:
+      - "traefik.enable=true"
+    ports:
+      - "5001:5001"
+    volumes:
+      - shared-logs:/app/logs
+    environment:
+      - FLASK_DEBUG=${FLASK_DEBUG:-false}
+      - FLASK_ENV=${FLASK_ENV:-staging}
+      - ENVIRONMENT=${ENVIRONMENT}
+      - NODE_ENV=${NODE_ENV:-production}
+      - TESTING=${TESTING:-false}
+      # DB
+      - DATABASE_URL=${DATABASE_URL}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_PORT=${POSTGRES_PORT}
+      # RabbitMQ
+      - QUEUE_PROVIDER=rabbitmq
+      - RABBITMQ_HOST=${RABBITMQ_HOST}
+      - RABBITMQ_PORT=${RABBITMQ_PORT}
+      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD}
+      - RABBITMQ_VHOST=${RABBITMQ_VHOST}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - WEBSOCKET_CORS_ORIGINS=${WEBSOCKET_CORS_ORIGINS}
+    secrets:
+      - secret_key
+      - jwt_secret_key
+      - database_url
+      - postgres_password
+      - postgres_user
+      - rabbitmq_password
+      - rabbitmq_username
+      - rabbitmq_vhost
+      - rabbitmq_host
+      - rabbitmq_port
+      - google_client_id
+      - google_client_secret
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5001/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    networks:
+      - plo-network-cloud
+
+  backend-grpc:
+    image: ploscope/backend-grpc:${BACKEND_GRPC_TAG:-staging}
+    platform: linux/amd64
+    container_name: backend-grpc-${ENVIRONMENT}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      secrets:
+        - nexus_username
+        - nexus_password
+      args:
+        BUILD_ENV: production
+        PIP_INDEX_URL: ${PIP_INDEX_URL}
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST}
+        NEXUS_PYPI_USERNAME: ${NEXUS_PYPI_USERNAME}
+        BUILDKIT_INLINE_CACHE: 1
+    environment:
+      - FLASK_ENV=${FLASK_ENV:-staging}
+      - ENVIRONMENT=${ENVIRONMENT}
+      - NODE_ENV=${NODE_ENV:-production}
+      - TESTING=${TESTING:-false}
+      - DATABASE_URL=${DATABASE_URL}
+      - RABBITMQ_HOST=${RABBITMQ_HOST}
+      - RABBITMQ_PORT=${RABBITMQ_PORT}
+      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD}
+      - RABBITMQ_VHOST=${RABBITMQ_VHOST}
+      - HOST=0.0.0.0
+      - GRPC_PORT=50051
+    command: ["python", "-m", "src.backend.grpc_main"]
+    ports:
+      - "50051:50051"
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 50051"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - plo-network-cloud
+
+  db:
+    profiles:
+      - localdev
+    image: postgres:15-alpine
+    container_name: ploscope-postgres-localdev
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=plosolver
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - plo-network-cloud
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d plosolver || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  rabbitmq-init:
+    profiles:
+      - localdev
+    image: ploscope/rabbitmq-init:staging
+    container_name: rabbitmq-init-localdev
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=${RABBITMQ_PORT}
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USERNAME}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD}
+      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD}
+      - RABBITMQ_VHOST=${RABBITMQ_VHOST}
+      - RABBITMQ_MAIN_EXCHANGE=${RABBITMQ_MAIN_EXCHANGE}
+      - RABBITMQ_DLQ_EXCHANGE=${RABBITMQ_DLQ_EXCHANGE}
+      - RABBITMQ_SPOT_QUEUE=${RABBITMQ_SPOT_QUEUE}
+      - RABBITMQ_SOLVER_QUEUE=${RABBITMQ_SOLVER_QUEUE}
+      - RABBITMQ_SPOT_DLQ=${RABBITMQ_SPOT_DLQ}
+      - RABBITMQ_SOLVER_DLQ=${RABBITMQ_SOLVER_DLQ}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=${POSTGRES_PORT}
+      - TESTING=false
+      - CONTAINER_ENV=production
+      - LOG_LEVEL=INFO
+      - BUILD_ENV=production
+      - VOLUME_MODE=rw
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - plo-network-cloud
+  db-migrate:
+    profiles:
+      - localdev
+    image: ploscope/db-init:${DB_INIT_TAG:-staging}
+    container_name: db-migrate-${ENVIRONMENT}
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/plosolver
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - PGPASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_HOST=db
+      - POSTGRES_MIGRATE_HOST=db
+      - SCHEMA_USER=${POSTGRES_USER}
+      - SCHEMA_PASSWORD=${SCHEMA_PASSWORD}
+      - POSTGRES_SCHEMA_USER=${POSTGRES_SCHEMA_USER}
+      - POSTGRES_SCHEMA_PASSWORD=${POSTGRES_SCHEMA_PASSWORD}
+      - LOG_LEVEL=INFO
+      - BUILD_ENV=production
+      - RESTART_POLICY=always
+      - VOLUME_MODE=rwd
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: "no"
+    networks:
+      - plo-network-cloud
+
+  rabbitmq:
+    profiles:
+      - localdev
+    image: rabbitmq:3-management-alpine
+    container_name: ploscope-rabbitmq-localdev
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USERNAME}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD}
+      - RABBITMQ_DEFAULT_VHOST=/plosolver
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - plo-network-cloud
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  celeryworker:
+    image: ploscope/celery-worker:master
+    platform: linux/amd64
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    profiles:
+      - localdev
+    container_name: ploscope-celeryworker-localdev
+    environment:
+      - LOG_LEVEL=DEBUG
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/plosolver
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - SECRET_KEY=${SECRET_KEY}
+      - RABBITMQ_VHOST=${RABBITMQ_VHOST}
+      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD}
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_SPOT_QUEUE=spot-processing
+      - RABBITMQ_SOLVER_QUEUE=solver-processing
+      - RABBITMQ_SPOT_DLQ=spot-processing-dlq
+      - RABBITMQ_SOLVER_DLQ=solver-processing-dlq
+      - CELERY_BROKER_URL=amqp://plosolver:dev_password_2024@rabbitmq:5672/%2Fplosolver
+      - CELERY_RESULT_BACKEND=redis://:dev_redis_password_2024@redis:6379/0
+      - CELERY_TASK_SERIALIZER=json
+      - CELERY_RESULT_SERIALIZER=json
+      - CELERY_ACCEPT_CONTENT=['json']
+      - CELERY_TIMEZONE=UTC
+      - CELERY_ENABLE_UTC=True
+      - CELERY_TASK_TRACK_STARTED=True
+      - CELERY_TASK_TIME_LIMIT=30*60
+      - CELERY_TASK_SOFT_TIME_LIMIT=25*60
+      - CELERY_WORKER_PREFETCH_MULTIPLIER=1
+      - CELERY_WORKER_MAX_TASKS_PER_CHILD=1000
+      - CELERY_WORKER_CONCURRENCY=4
+      - CELERY_HEALTH_PORT=5002
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - REDIS_PASSWORD=dev_redis_password_2024
+      - REDIS_URL=redis://:dev_redis_password_2024@redis:6379/0
+      - BUILD_ENV=development
+      - RESTART_POLICY=unless-stopped
+      - VOLUME_MODE=rw
+      - PGPASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - .:/app/celery-worker
+      - ./logs:/app/logs
+    networks:
+      - plo-network-cloud
+    healthcheck:
+      test: ["CMD", "/app/health_check.sh"]
+      interval: 10s
+      timeout: 15s
+      retries: 5
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    container_name: plosolver-redis-test
+    profiles:
+      - localdev
+    ports:
+      - "6379:6379"
+    environment:
+      - REDIS_PASSWORD=dev_redis_password_2024
+    networks:
+      - plo-network-cloud
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+secrets:
+  nexus_username:
+    environment: NEXUS_PYPI_USERNAME
+  nexus_password:
+    environment: NEXUS_PYPI_PASSWORD
+  secret_key:
+    environment: SECRET_KEY
+  jwt_secret_key:
+    environment: JWT_SECRET_KEY
+  database_url:
+    environment: DATABASE_URL
+  postgres_password:
+    environment: POSTGRES_PASSWORD
+  postgres_user:
+    environment: POSTGRES_USER
+  rabbitmq_password:
+    environment: RABBITMQ_PASSWORD
+  rabbitmq_username:
+    environment: RABBITMQ_USERNAME
+  rabbitmq_vhost:
+    environment: RABBITMQ_VHOST
+  rabbitmq_host:
+    environment: RABBITMQ_HOST
+  rabbitmq_port:
+    environment: RABBITMQ_PORT
+  google_client_id:
+    environment: GOOGLE_CLIENT_ID
+  google_client_secret:
+    environment: GOOGLE_CLIENT_SECRET
+  websocket_cors_origins:
+    environment: WEBSOCKET_CORS_ORIGINS
+  stripe_secret_key:
+    environment: STRIPE_SECRET_KEY
+  stripe_publishable_key:
+    environment: STRIPE_PUBLISHABLE_KEY
+  stripe_webhook_secret:
+    environment: STRIPE_WEBHOOK_SECRET
+
+
+volumes:
+  shared-logs:
+    external: true
+  postgres-data:
+    external: true
+  rabbitmq-data:
+    external: true
+
+networks:
+  plo-network-cloud:
+    external: true

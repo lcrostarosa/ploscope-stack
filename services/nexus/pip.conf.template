@@ -1,0 +1,25 @@
+[global]
+# Use environment variables for secure configuration
+# Set these environment variables:
+#   export PIP_INDEX_URL="https://nexus.ploscope.com/repository/pypi-internal/simple"
+#   export PIP_TRUSTED_HOST="nexus.ploscope.com"
+#   export PIP_USERNAME="your-username"
+#   export PIP_PASSWORD="your-password"
+
+# For Docker builds, pass these as build args:
+#   --build-arg PIP_INDEX_URL=${PIP_INDEX_URL}
+#   --build-arg PIP_TRUSTED_HOST=${PIP_TRUSTED_HOST}
+
+# Example configuration (uncomment and customize as needed):
+# index-url = ${PIP_INDEX_URL}
+# trusted-host = ${PIP_TRUSTED_HOST}
+
+# Alternative: Use credentials in URL (less secure)
+# index-url = https://username:password@nexus.ploscope.com/repository/pypi-internal/simple
+
+[install]
+# Additional install-time configurations
+trusted-host = nexus.ploscope.com
+
+[search]
+# Search configuration if needed

@@ -1,0 +1,138 @@
+@use '../../styles/Variables' as *;
+
+.equity-section {
+  margin-top: 8px;
+  width: 100%;
+}
+
+.equity-loading-indicator {
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-align: center;
+  font-style: italic;
+  padding: 8px;
+}
+
+.equity-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10px;
+  margin-bottom: 8px;
+  background: var(--bg-primary);
+  border-radius: 4px;
+  overflow: hidden;
+
+  @media (max-width: 768px) {
+    font-size: 9px;
+    margin-bottom: 6px;
+  }
+
+  thead {
+    background: var(--bg-tertiary);
+    
+    th {
+      padding: 6px 4px;
+      font-weight: 600;
+      text-align: left;
+      color: var(--text-primary);
+      border-bottom: 1px solid var(--border-color);
+      font-size: 10px;
+
+      @media (max-width: 768px) {
+        padding: 4px 3px;
+        font-size: 9px;
+      }
+    }
+  }
+
+  tbody {
+    tr {
+      border-bottom: 1px solid var(--border-color);
+
+      &:last-child {
+        border-bottom: none;
+      }
+
+      &:hover {
+        background: var(--bg-tertiary);
+      }
+    }
+
+    td {
+      padding: 6px 4px;
+      color: var(--text-secondary);
+      text-align: left;
+
+      @media (max-width: 768px) {
+        padding: 4px 3px;
+      }
+
+      &.board-label {
+        font-weight: 600;
+        color: var(--text-primary);
+        width: 60px;
+      }
+
+      &.hand-value {
+        font-weight: 500;
+        color: var(--text-primary);
+        font-size: 9px;
+        max-width: 80px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+
+        @media (max-width: 768px) {
+          font-size: 8px;
+          max-width: 60px;
+        }
+      }
+
+      &.outcome-label {
+        font-weight: 500;
+        color: var(--text-secondary);
+      }
+
+      &.outcome-value {
+        text-align: right;
+        font-weight: 600;
+        color: var(--text-primary);
+      }
+    }
+  }
+}
+
+.outcome-table {
+  margin-top: 4px;
+  
+  thead th {
+    text-align: center;
+    font-weight: 600;
+    background: var(--bg-tertiary);
+  }
+}
+
+// Board-related styles (legacy, keeping for compatibility)
+.board {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  align-items: center;
+}
+
+.board-cards {
+  display: flex;
+  flex-direction: row;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: center;
+}
+
+.board-section {
+  margin-bottom: 2rem;
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+  padding: 20px;
+  border: 1px solid var(--border-color);
+}
+

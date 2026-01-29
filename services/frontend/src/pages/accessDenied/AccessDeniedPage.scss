@@ -1,0 +1,88 @@
+@use '../../components/ui/Buttons.scss';
+
+.access-denied-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 20px;
+}
+
+.access-denied-container {
+  max-width: 500px;
+  width: 100%;
+}
+
+.access-denied-content {
+  background: white;
+  border-radius: 12px;
+  padding: 40px;
+  text-align: center;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+}
+
+.access-denied-icon {
+  font-size: 4rem;
+  margin-bottom: 20px;
+  opacity: 0.8;
+}
+
+.access-denied-title {
+  font-size: 2rem;
+  font-weight: 600;
+  color: #2d3748;
+  margin-bottom: 16px;
+}
+
+.access-denied-message {
+  font-size: 1.1rem;
+  color: #4a5568;
+  margin-bottom: 32px;
+  line-height: 1.6;
+}
+
+.access-denied-actions {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+}
+
+.login-button {
+  min-width: 120px;
+  padding: 12px 24px;
+  font-size: 1rem;
+  font-weight: 500;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+  }
+}
+
+// Responsive design
+@media (max-width: 768px) {
+  .access-denied-content {
+    padding: 30px 20px;
+  }
+
+  .access-denied-title {
+    font-size: 1.75rem;
+  }
+
+  .access-denied-message {
+    font-size: 1rem;
+  }
+
+  .access-denied-actions {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .login-button {
+    width: 100%;
+    max-width: 200px;
+  }
+}

@@ -1,0 +1,60 @@
+# Playwright Test Container for PLOSolver
+FROM mcr.microsoft.com/playwright:v1.48.0-focal
+
+# Set working directory
+WORKDIR /app
+
+# Install Node.js and npm
+RUN apt-get update && apt-get install -y \
+    curl \
+    && curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
+    && apt-get install -y nodejs \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy only essential package files first for better caching
+COPY package*.json ./
+
+# Install dependencies (include devDependencies for cucumber + chai)
+RUN npm ci
+
+# Copy only the essential frontend files needed for testing
+COPY src/public/ ./public/
+COPY src/pages/ ./pages/
+COPY src/components/ ./components/
+COPY src/contexts/ ./contexts/
+COPY src/hooks/ ./hooks/
+COPY src/utils/ ./utils/
+COPY src/types/ ./types/
+COPY src/styles/ ./styles/
+COPY src/index.tsx ./
+
+COPY tsconfig.json ./
+COPY babel.config.js ./
+COPY webpack.config.js ./
+COPY playwright.config.js ./
+COPY .babelrc ./
+COPY global.d.ts ./
+COPY setupTests.js ./
+COPY teardownTests.js ./
+COPY validate-styles.js ./
+
+# Install Playwright browsers
+RUN npx playwright install --with-deps chromium
+
+# Create test results directory
+RUN mkdir -p /app/test-results /app/screenshots /app/reports
+
+# Set environment variables for headless testing
+ENV CUCUMBER_HEADLESS=true
+ENV CUCUMBER_BASE_URL=http://traefik
+ENV NODE_ENV=test
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD node -e "console.log('Playwright container is healthy')" || exit 1
+
+# Default command
+CMD ["npm", "run", "test:cucumber:ci"]
+

@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  vault:
+    image: hashicorp/vault:1.20.0
+    container_name: plo-solver-vault
+    ports:
+      - "8200:8200"
+    environment:
+      - VAULT_ADDR=http://0.0.0.0:8200
+      - VAULT_DEV_ROOT_TOKEN_ID=plo-solver-dev-token
+      - VAULT_DEV_LISTEN_ADDRESS=0.0.0.0:8200
+      - VAULT_DEV_DISABLE_MLOCK=true
+    volumes:
+      - ./config:/vault/config
+      - vault-data:/vault/file
+      - ./scripts:/vault/scripts
+      - ./policies:/vault/policies
+    cap_add:
+      - IPC_LOCK
+    # Use dev mode for development
+    command: vault server -dev -dev-root-token-id=plo-solver-dev-token -dev-listen-address=0.0.0.0:8200
+    restart: unless-stopped
+    networks:
+      - vault-network
+      # Uncomment the line below to also connect to the main application network
+      - plo-solver-network
+
+volumes:
+  vault-data:
+    driver: local
+
+networks:
+  vault-network:
+    driver: bridge
+    name: plo-solver-vault-network
+  # Uncomment the line below to use the main application network
+  plo-solver-network:
+    external: true 

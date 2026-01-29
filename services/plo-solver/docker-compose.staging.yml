@@ -1,0 +1,352 @@
+
+
+services:
+  ## Repo Maintained services
+  frontend:
+    image: ploscope/frontend:${FRONTEND_TAG:-staging}
+    platform: linux/amd64
+    container_name: plosolver-frontend-staging
+    build:
+      context: src/frontend
+      dockerfile: Dockerfile
+      args:
+        NODE_ENV: production
+        REACT_APP_API_URL: /api
+        BUILDKIT_INLINE_CACHE: 1
+    env_file:
+      - env.staging
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+      rabbitmq-init:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    networks:
+      plo-network-staging:
+        ipv4_address: 172.30.1.12
+    volumes:
+      - shared-logs:/app/logs
+
+  backend:
+    image: ploscope/backend:${BACKEND_TAG:-staging}
+    platform: linux/amd64
+    container_name: plosolver-backend-staging
+    build:
+      context: src/backend
+      dockerfile: Dockerfile
+      args:
+        BUILD_ENV: production
+        PIP_INDEX_URL: ${PIP_INDEX_URL}
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST}
+        NEXUS_PYPI_PASSWORD: ${NEXUS_PYPI_PASSWORD}
+        BUILDKIT_INLINE_CACHE: 1
+    labels:
+      - "traefik.enable=true"
+    ports:
+      - "5001:5001"
+    volumes:
+      - ./src/backend/services:/app/backend/services
+      - shared-logs:/app/logs
+    env_file:
+      - env.staging
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+      rabbitmq-init:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5001/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    networks:
+      plo-network-staging:
+        ipv4_address: 172.30.1.13
+
+  celeryworker:
+    image: ploscope/celery-worker:${CELERY_TAG:-staging}
+    platform: linux/amd64
+    container_name: plosolver-celery-worker-staging
+    build:
+      context: src/celery
+      dockerfile: Dockerfile
+      args:
+        BUILDKIT_INLINE_CACHE: 1
+        BUILD_ENV: production
+        PIP_INDEX_URL: ${PIP_INDEX_URL}
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST}
+        NEXUS_PYPI_PASSWORD: ${NEXUS_PYPI_PASSWORD}
+    env_file:
+      - env.staging
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+      rabbitmq-init:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      plo-network-staging:
+        ipv4_address: 172.30.1.15
+    healthcheck:
+      test: [ "CMD", "pgrep", "-f", "celery" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+  rabbitmq-init:
+    image: ploscope/rabbitmq-init:${RABBITMQ_INIT_TAG:-staging}
+    platform: linux/amd64
+    build:
+      context: src/rabbitmq-init
+      dockerfile: Dockerfile
+      args:
+        BUILDKIT_INLINE_CACHE: 1
+    container_name: plosolver-rabbitmq-init-staging
+    env_file:
+      - env.staging
+    environment:
+      - CONTAINER_ENV=docker
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      plo-network-staging:
+        ipv4_address: 172.30.1.25
+
+  db-migrate:
+    image: ploscope/db-init:${DB_INIT_TAG:-staging}
+    platform: linux/amd64
+    build:
+      context: src/db-init
+      dockerfile: Dockerfile
+    container_name: plosolver-db-migrate-staging
+    env_file:
+      - env.staging
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      plo-network-staging:
+        ipv4_address: 172.30.1.24
+  ## Supporting services
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: plosolver-rabbitmq-staging
+    labels:
+      - "traefik.enable=true"
+    ports:
+      - "5672:5672"    # AMQP port
+      - "15672:15672"  # Management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - traefik_certs:/etc/traefik-certs:ro
+      - ./scripts/operations/cert-monitor.sh:/bin/cert-monitor.sh:ro
+      - ./scripts/utilities/entrypoint-wrapper.sh:/bin/entrypoint-wrapper.sh:ro
+    entrypoint: ["/bin/entrypoint-wrapper.sh", "docker-entrypoint.sh"]
+    command: ["rabbitmq-server"]
+    env_file:
+      - env.staging
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      plo-network-staging:
+        ipv4_address: 172.30.1.10
+
+  traefik:
+    image: traefik:v3.4.4
+    container_name: plosolver-traefik-staging
+    command:
+      - "--configfile=/etc/traefik/traefik.yml"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik_certs:/etc/certs
+      - ./server/traefik/staging/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./server/traefik/staging/dynamic.docker.yml:/etc/traefik/dynamic.yml:ro
+      - ${TRAEFIK_LOG_PATH:-./logs/traefik}:/var/log/traefik
+    env_file:
+      - env.staging
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/api/http/routers"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+    networks:
+      plo-network-staging:
+        ipv4_address: 172.30.1.11
+
+  db:
+    image: postgres:15
+    container_name: plosolver-db-staging
+    ports:
+      - "5432:5432"  # Expose for integration tests
+    env_file:
+      - env.staging
+    volumes:
+      - ${POSTGRES_DATA_PATH:-./data/postgres}:/var/lib/postgresql/data
+      - ${POSTGRES_BACKUP_PATH:-./backups}:/backups:rw
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      plo-network-staging:
+        ipv4_address: 172.30.1.14
+
+  redis:
+    image: redis:7-alpine
+    container_name: plosolver-redis-staging
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: ["sh", "-c", "exec redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru --requirepass \"$REDIS_PASSWORD\""]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$REDIS_PASSWORD\" ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    env_file:
+      - env.staging
+    networks:
+      plo-network-staging:
+        ipv4_address: 172.30.1.16
+
+
+  ## Monitoring services
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: plosolver-prometheus-staging
+    user: 475:475
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./data/prometheus:/prometheus
+      - ./server/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      plo-network-staging:
+        ipv4_address: 172.30.1.21
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: plosolver-grafana-staging
+    user: 472:472
+    ports:
+      - "3006:3000"
+    env_file:
+      - env.staging
+    volumes:
+      - ./data/grafana:/var/lib/grafana
+      - ./server/prometheus/grafana-provisioning.yml:/etc/grafana/provisioning/datasources/prometheus.yml:ro
+      - ./server/prometheus/grafana-dashboards-provisioning/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+      - ./server/prometheus/grafana-dashboards:/etc/grafana/dashboards:ro
+      - ./server/prometheus/grafana-alerting-provisioning/alerting.yml:/etc/grafana/provisioning/alerting/alerting.yml:ro
+      - ./server/prometheus/grafana-alerting-provisioning/rules.yml:/etc/grafana/provisioning/alerting/rules.yml:ro
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/login"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      plo-network-staging:
+        ipv4_address: 172.30.1.22
+
+  portainer:
+    image: portainer/portainer-ce:alpine-sts
+    container_name: plosolver-portainer-staging
+    labels:
+      - "traefik.enable=true"
+    command: -H unix:///var/run/docker.sock
+    ports:
+      - "9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+      - traefik_certs:/etc/traefik-certs:ro
+      - ./scripts/operations/cert-monitor.sh:/scripts/cert-monitor.sh:ro
+      - ./scripts/utilities/entrypoint-wrapper.sh:/scripts/entrypoint-wrapper.sh:ro
+    entrypoint: ["/scripts/entrypoint-wrapper.sh", "/portainer"]
+    environment:
+      - CERT_DOMAIN=portainer.ploscope.com
+      - CERT_FILE=/data/certs/portainer.crt
+      - KEY_FILE=/data/certs/portainer.key
+      - SERVICE_NAME=portainer
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9000/api/system/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 180s
+    restart: unless-stopped
+    networks:
+      plo-network-staging:
+        ipv4_address: 172.30.1.23
+
+
+
+volumes:
+  traefik_certs:
+  traefik_letsencrypt:
+  rabbitmq_data:
+  portainer_data:
+  shared-logs:
+  redis_data:
+
+networks:
+  plo-network-staging:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.1.0/24 

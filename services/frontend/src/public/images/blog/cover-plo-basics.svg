@@ -1,0 +1,22 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="PLO basics cover">
+  <defs>
+    <linearGradient id="gb" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#00BFA5"/>
+      <stop offset="100%" stop-color="#E53935"/>
+    </linearGradient>
+    <radialGradient id="glowb" cx="20%" cy="70%" r="0.6">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.10"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="#111417"/>
+  <rect x="-60" y="-60" width="1320" height="750" fill="url(#gb)" opacity="0.16"/>
+  <circle cx="220" cy="480" r="240" fill="url(#glowb)"/>
+  <g fill="none" stroke="#ffffff" opacity="0.2">
+    <rect x="180" y="140" width="140" height="200" rx="12"/>
+    <rect x="350" y="160" width="140" height="200" rx="12"/>
+    <rect x="520" y="140" width="140" height="200" rx="12"/>
+    <rect x="690" y="160" width="140" height="200" rx="12"/>
+  </g>
+</svg>
+

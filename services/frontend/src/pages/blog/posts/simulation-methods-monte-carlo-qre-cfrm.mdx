@@ -1,0 +1,86 @@
+export const meta = {
+  slug: 'simulation-methods-monte-carlo-qre-cfrm',
+  title: 'PLO Simulation Methods: Monte Carlo, QRE, and CFR‑M',
+  date: '2025-07-13',
+  excerpt:
+    'How Monte Carlo, Quantal Response Equilibrium, and Monte Carlo CFR differ—and when to use each.',
+};
+
+## Why Different Methods Exist
+
+PLO analysis spans quick equity checks to deeper strategy questions. No single method fits all use‑cases, so practitioners combine tools depending on the goal (equity estimation, line selection, or approximating equilibrium play).
+
+---
+
+## Monte Carlo (MC)
+
+Monte Carlo simulation estimates equity/EV by sampling many deals and action paths under fixed assumptions. It’s fast, flexible, and ideal when you want immediate signal without solving an entire game tree.
+
+**Strengths**
+
+- Quick equity estimates for single‑ or double‑board spots
+- Scales to multiway scenarios
+- Great for sensitivity testing (board, positions, ranges)
+
+**Limitations**
+
+- Assumes strategies you input; doesn’t “learn” best responses
+- Results depend on range and line assumptions
+
+**Use in PLOScope**
+
+- Build realistic scenarios and estimate equities in [Spot Mode](/app/spot)
+- Compare boards (including double‑board) to understand split vs. scoop potential
+- Iterate assumptions and save scenarios for review
+
+---
+
+## Quantal Response Equilibrium (QRE)
+
+QRE is an equilibrium concept with bounded rationality: players respond probabilistically to payoffs (e.g., a logit model), so better actions are chosen more often but not perfectly. This can mirror human error/noise and is useful for modeling “plausible” behavior rather than perfect play.
+
+**Strengths**
+
+- Captures noisy/realistic decision‑making
+- Useful to explore exploit opportunities versus suboptimal opponents
+
+**Limitations**
+
+- Requires calibration (e.g., the “temperature” parameter) and careful interpretation
+- Not a replacement for full equilibrium solving on large game trees
+
+**Use in Practice / With PLOScope**
+
+- Emulate QRE‑like behavior by mixing strategies in [Spot Mode](/app/spot)
+- Stress‑test lines against varying “error rates” to see what remains robust
+
+---
+
+## Counterfactual Regret Minimization with Sampling (CFR‑M / MCCFR)
+
+Counterfactual Regret Minimization (CFR) is a leading approach to approximate Nash equilibria in extensive‑form games. The Monte Carlo (sampling) variant (often called MCCFR or CFR‑M) samples portions of the game tree to speed convergence.
+
+**Strengths**
+
+- Converges toward equilibrium strategies
+- Provides principled guidance on action frequencies across nodes
+
+**Limitations**
+
+- Large state/action spaces in PLO make exact solutions expensive
+- Spot‑sized abstractions and sampling choices affect accuracy
+
+**Use in Practice / With PLOScope**
+
+- Explore how action choices affect EV across lines in Spot Mode scenarios
+- Use MC equities to guide abstractions and focus on critical branches
+
+---
+
+## Choosing a Method
+
+- Need quick feedback on a complex multiway spot? **Monte Carlo**
+- Modeling noisy opponents or testing robustness? **QRE‑style mixtures**
+- Studying principled action frequencies within a spot abstraction? **CFR‑M**
+
+In practice, you’ll often start with MC equities to build intuition, use QRE‑style mixes to reflect real mistakes, and lean on CFR‑inspired reasoning for disciplined frequencies.

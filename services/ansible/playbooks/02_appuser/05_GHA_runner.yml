@@ -1,0 +1,88 @@
+# Create a folder
+- name: Ensure actions-runner directory exists in appuser home
+  file:
+    path: "/home/appuser/actions-runner"
+    state: directory
+    owner: appuser
+    group: appuser
+    mode: '0755'
+  become: yes
+  become_user: appuser
+
+- name: Download GitHub Actions runner package
+  get_url:
+    url: "https://github.com/actions/runner/releases/download/v2.327.1/actions-runner-linux-x64-2.327.1.tar.gz"
+    dest: "/home/appuser/actions-runner/actions-runner-linux-x64-2.327.1.tar.gz"
+    mode: '0644'
+    owner: appuser
+    group: appuser
+  become: yes
+  become_user: appuser
+
+- name: Validate runner package checksum
+  ansible.builtin.shell: |
+    echo "d68ac1f500b747d1271d9e52661c408d56cffd226974f68b7dc813e30b9e0575  actions-runner-linux-x64-2.327.1.tar.gz" | shasum -a 256 -c
+  args:
+    chdir: "/home/appuser/actions-runner"
+  become: yes
+  become_user: appuser
+
+- name: Extract the GitHub Actions runner package
+  ansible.builtin.unarchive:
+    src: "/home/appuser/actions-runner/actions-runner-linux-x64-2.327.1.tar.gz"
+    dest: "/home/appuser/actions-runner"
+    remote_src: yes
+    owner: appuser
+    group: appuser
+  become: yes
+  become_user: appuser
+
+
+- name: Configure GitHub Actions runner
+  ansible.builtin.shell: |
+    ./config.sh --url https://github.com/PLOScope --token {{ gha_runner_token }} --unattended
+  args:
+    chdir: "/home/appuser/actions-runner"
+  become: yes
+  become_user: appuser
+
+- name: Start GitHub Actions runner
+  ansible.builtin.shell: |
+    ./run.sh
+  args:
+    chdir: "/home/appuser/actions-runner"
+  become: yes
+  become_user: appuser
+
+- name: Add deadsnakes PPA for Python 3.11
+  ansible.builtin.apt_repository:
+    repo: ppa:deadsnakes/ppa
+    state: present
+  become: yes
+
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: yes
+  become: yes
+
+- name: Install pipx
+  ansible.builtin.apt:
+    name: pipx
+    state: present
+  become: yes
+
+- name: Ensure pipx path is set for appuser
+  ansible.builtin.shell: |
+    pipx ensurepath
+  become: yes
+  become_user: appuser
+
+- name: Install Python 3.11 and development libraries
+  ansible.builtin.apt:
+    name:
+      - python3.11-dev
+      - libpython3.11
+      - python3.11-venv
+    state: present
+  become: yes
+

@@ -1,0 +1,144 @@
+[tool.poetry]
+name = "celery_worker"
+version = "0.1.2"
+description = "Celery worker for async processing"
+authors = ["PLOSolver Team <hello@plosolver.com>"]
+license = "All Rights Reserved"
+readme = "README.md"
+packages = [{ include = "celery_worker", from = "src" }]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+
+# PLOSolver Core Package
+core = "1.1.3"
+
+
+# Celery and task queue
+celery = "^5.3.4"
+redis = "^4.6.0"
+pika = "^1.3.2"
+
+# Database
+psycopg2-binary = "^2.9.10"
+Bcrypt = "^5.0.0"
+SQLAlchemy = "^2.0.43"
+
+# Environment and configuration
+python-dotenv = "^1.1.0"
+
+# HTTP requests
+requests = "^2.32.4"
+
+# Metrics and monitoring
+prometheus-client = "^0.20.0"
+
+
+[tool.poetry.group.dev.dependencies]
+# Testing dependencies
+pytest = "^8.0.0"
+pytest-mock = "^3.14.1"
+pytest-cov = "^5.0.0"
+
+# Linting and code quality
+flake8 = "^6.0.0"
+black = "^23.0.0"
+pre-commit = "^3.6.0"
+isort = "^5.13.2"
+autoflake = "^2.2.1"
+
+[tool.poetry.group.build.dependencies]
+# Build dependencies for Cython compilation
+cython = "^3.0.0"
+setuptools = "^61.0"
+wheel = "^0.40.0"
+
+[tool.poetry.urls]
+"Homepage" = "https://github.com/plosolver/ploscope"
+"Repository" = "https://github.com/plosolver/ploscope"
+
+[[tool.poetry.source]]
+name = "nexus-internal"
+url = "https://nexus.ploscope.com/repository/pypi-internal/simple"
+priority = "supplemental"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+
+
+[tool.black]
+line-length = 120
+target-version = ['py311']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+  | src/protos
+  | src/backend/protos
+)/
+'''
+
+[tool.flake8]
+max-line-length = 120
+exclude = [
+    "venv/",
+    "__pycache__/",
+    "*.pyc",
+    "build_cython.py",
+    "src/protos/",
+    "src/backend/protos/"
+]
+ignore = ["E203", "W503", "E402"]
+
+
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+pythonpath = ["src"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "--verbose",
+    "--tb=short"
+]
+markers = [
+    "unit: Unit tests - no external dependencies",
+    "integration: Integration tests - require external services (Redis, database, RabbitMQ)",
+    "docker: Docker-based tests"
+]
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "*/tests/*",
+    "*/test_*",
+    "*/__pycache__/*",
+    "*/venv/*"
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]

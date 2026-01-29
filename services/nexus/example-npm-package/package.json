@@ -1,0 +1,23 @@
+{
+  "name": "@ploscope/nexus-test-package",
+  "version": "1.0.0",
+  "description": "Test package for PLOScope Nexus NPM registry",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "nexus",
+    "test",
+    "ploscope"
+  ],
+  "author": "PLOScope Team",
+  "license": "MIT",
+  "publishConfig": {
+    "registry": "https://nexus.ploscope.com/repository/npm-internal/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ploscope/nexus-test-package.git"
+  }
+}

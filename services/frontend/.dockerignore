@@ -1,0 +1,76 @@
+# Optimize frontend build context for all builds
+
+# Node modules and dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build outputs
+dist/
+build/
+.next/
+.cache/
+
+# Coverage and test reports
+.coverage
+coverage/
+htmlcov/
+logs/
+reports/
+test-results/
+screenshots/
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Documentation
+*.md
+README*
+
+# Docker files
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Test files (not needed in production builds)
+__tests__/
+*.test.js
+*.test.ts
+*.test.tsx
+*.spec.js
+*.spec.ts
+*.spec.tsx
+playwright-report/
+test-results/
+
+# Environment files
+.env*
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Cache files
+.eslintcache
+*.log
+
+# Source maps
+**/*.map

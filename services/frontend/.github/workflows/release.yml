@@ -1,0 +1,112 @@
+name: Frontend Release Management
+
+# This workflow is triggered when code is merged into the master branch
+# It handles both automatic releases (via conventional commits) and manual releases for frontend only
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: 'Frontend release type (major, minor, patch)'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - major
+          - minor
+          - patch
+      prerelease:
+        description: 'Mark as prerelease'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  REGISTRY: docker.io
+  IMAGE_NAME: ploscope
+
+jobs:
+  release:
+    name: Frontend Release Management
+    runs-on: ${{ vars.GHA_RUNNER }}
+    # Only run on pushes to master, or when manually dispatched
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || github.event_name == 'workflow_dispatch'
+    outputs:
+      release_tag: ${{ steps.release.outputs.tag }}
+      release_version: ${{ steps.release.outputs.version }}
+    permissions:
+      contents: write
+      packages: write
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.PAT }}
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+      - name: Install dependencies
+        run: npm ci
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+      - name: Create frontend release
+        id: release
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # Manual frontend release
+            current_version=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+            release_type="${{ github.event.inputs.release_type }}"
+            
+            case "$release_type" in
+              "major")
+                next_version=$(echo $current_version | sed 's/v//' | awk -F. '{print "v" ($1+1) ".0.0"}')
+                ;;
+              "minor")
+                next_version=$(echo $current_version | sed 's/v//' | awk -F. '{print "v" $1 "." ($2+1) ".0"}')
+                ;;
+              "patch")
+                next_version=$(echo $current_version | sed 's/v//' | awk -F. '{print "v" $1 "." $2 "." ($3+1)}')
+                ;;
+            esac
+            
+            tag="$next_version"
+            version=$(echo $tag | sed 's/v//')
+            
+            # Update frontend package.json version
+            npm version $version --no-git-tag-version
+            git add package.json
+            
+            # Commit version bump
+            git commit -m "chore(frontend): bump version to $version"
+            
+            # Create tag
+            git tag -a $tag -m "Frontend Release $tag"
+            git push origin $tag
+            git push origin HEAD
+            
+            # Create GitHub release
+            gh release create $tag \
+              --title "Frontend Release $tag" \
+              --notes "Frontend release with version $version" \
+              ${{ github.event.inputs.prerelease == 'true' && '--prerelease' || '' }}
+          else
+            # Automatic frontend release based on conventional commits
+            npx semantic-release
+            tag=$(git describe --tags --abbrev=0)
+            version=$(echo $tag | sed 's/v//')
+          fi
+
+          echo "tag=$tag" >> $GITHUB_OUTPUT
+          echo "version=$version" >> $GITHUB_OUTPUT
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT }}
+          GH_TOKEN: ${{ secrets.PAT }}

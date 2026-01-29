@@ -1,0 +1,29 @@
+{
+  "dashboards": [
+    {
+      "name": "Infrastructure Overview",
+      "description": "System metrics, CPU, memory, disk usage",
+      "type": "system_metrics"
+    },
+    {
+      "name": "Container Health",
+      "description": "Docker container status, logs, resource usage",
+      "type": "container"
+    },
+    {
+      "name": "Application Performance",
+      "description": "Backend and frontend application logs, errors, performance",
+      "type": "application"
+    },
+    {
+      "name": "Traefik Access Logs",
+      "description": "HTTP requests, response times, status codes",
+      "type": "traefik"
+    },
+    {
+      "name": "Security Monitoring",
+      "description": "Failed logins, suspicious activity, access patterns",
+      "type": "security"
+    }
+  ]
+}

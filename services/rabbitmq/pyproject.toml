@@ -1,0 +1,64 @@
+[tool.poetry]
+name = "ploscope-rabbitmq-init"
+version = "0.1.11"
+description = "RabbitMQ queue initialization for PLOScope"
+authors = ["PLOScope Team <dev@ploscope>" ]
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.11"
+pika = "^1.3.2"
+python-dotenv = ">=1.0.0"
+
+[tool.poetry.group.dev.dependencies]
+yamllint = "^1.35.1"
+bandit = "^1.7.7"
+pre-commit = "^3.6.0"
+black = "^24.0.0"
+isort = "^5.13.0"
+flake8 = "^7.0.0"
+
+[build-system]
+requires = ["poetry-core>=1.8.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 120
+target-version = ['py311']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | venv
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 120
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+use_parentheses = true
+ensure_newline_before_comments = true
+skip = [".venv", "venv", "build", "dist"]
+
+[tool.flake8]
+max-line-length = 120
+extend-ignore = ["E203", "W503"]
+exclude = [".venv", "venv", "build", "dist"]
+
+[tool.bandit]
+exclude_dirs = [".venv", "venv"]
+targets = ["init_rabbitmq_queues.py"]
+
+# Note: yamllint configuration is typically in .yamllint file
+# The pre-commit hook uses command line arguments for configuration

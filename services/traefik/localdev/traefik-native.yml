@@ -1,0 +1,136 @@
+# Traefik Configuration for Native/Local Services
+# This configuration routes traffic from port 80 to locally running frontend and backend
+
+api:
+  dashboard: true
+  insecure: true
+
+entryPoints:
+  web:
+    address: ":80"
+  dashboard:
+    address: ":8081"
+  metrics:
+    address: ":8082"
+
+providers:
+  file:
+    directory: "/etc/traefik"
+    watch: true
+
+# HTTP configuration
+http:
+  routers:
+    # Backend API routes - higher priority to catch API requests first
+    backend-api:
+      rule: "PathPrefix(`/api`)"
+      service: backend
+      entrypoints:
+        - web
+      priority: 100
+      middlewares:
+        - cors-headers
+    
+    # WebSocket routes
+    websocket:
+      rule: "PathPrefix(`/socket.io`)"
+      priority: 10
+      service: backend
+      entrypoints:
+        - web
+      middlewares:
+        - websocket-headers
+    
+    # Frontend routes (catch-all for localhost) - lower priority
+    frontend:
+      rule: "Host(`localhost`)"
+      service: frontend
+      entrypoints:
+        - web
+      priority: 1
+      middlewares:
+        - cors-headers
+
+    # Dashboard
+    dashboard:
+      rule: "Host(`localhost`) && PathPrefix(`/dashboard`)"
+      service: api@internal
+      entryPoints:
+        - dashboard
+      tls: {}
+
+  services:
+    backend:
+      loadBalancer:
+        servers:
+          - url: "http://host.docker.internal:5001"
+        passHostHeader: true
+        responseForwarding:
+          flushInterval: "100ms"
+        # Enable WebSocket support and sticky sessions
+        sticky:
+          cookie:
+            name: "backend-sticky"
+    
+    frontend:
+      loadBalancer:
+        servers:
+          - url: "http://host.docker.internal:3001"
+
+  middlewares:
+    cors-headers:
+      headers:
+        accessControlAllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - PATCH
+          - OPTIONS
+        accessControlAllowHeaders:
+          - "*"
+        accessControlAllowOriginList:
+          - "*"
+        accessControlMaxAge: 100
+        addVaryHeader: true
+    
+    websocket-headers:
+      headers:
+        accessControlAllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - PATCH
+          - OPTIONS
+        accessControlAllowHeaders:
+          - "*"
+        accessControlAllowOriginList:
+          - "*"
+        accessControlMaxAge: 100
+        addVaryHeader: true
+        # WebSocket specific headers
+        customRequestHeaders:
+          Upgrade: "websocket"
+          Connection: "upgrade"
+
+# Logging configuration
+log:
+  level: DEBUG
+
+accessLog: {} 
+
+metrics:
+  prometheus:
+    entryPoint: metrics
+    addEntryPointsLabels: true
+    addServicesLabels: true
+    buckets:
+      - 0.1
+      - 0.3
+      - 1.2
+      - 5.0
+
+tracing:
+  serviceName: plosolver-traefik
+  sampleRate: 1.0 

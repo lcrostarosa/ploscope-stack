@@ -1,0 +1,397 @@
+name: Build and Push Artifacts
+
+on:
+  push:
+    branches: [main, master, develop]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [main, master, develop]
+  workflow_dispatch:
+    inputs:
+      docker_tag:
+        description: 'Docker tag to use for images (e.g., latest, staging, v1.0.0)'
+        type: string
+        default: 'latest'
+      skip_tests:
+        description: 'Skip unit tests'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  pull-requests: write
+  actions: write
+
+env:
+  REGISTRY: docker.io
+  IMAGE_NAME: ploscope
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  cancel-pr-jobs:
+    if: github.event_name == 'push' && github.ref_name == 'master'
+    runs-on: ${{ vars.GHA_RUNNER }}
+    timeout-minutes: 1
+    steps:
+      - name: Cancel running PR workflows
+        uses: styfle/cancel-workflow-action@0.12.1
+        with:
+          workflow_id: ${{ github.workflow }}
+          access_token: ${{ github.token }}
+
+  detect-changes:
+    runs-on: ${{ vars.GHA_RUNNER }}
+    timeout-minutes: 1
+    outputs:
+      code_changed: ${{ steps.filter.outputs.code_changed }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0  # Fetch full history for change detection
+
+      - name: Detect changes in celery-worker
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          filters: |
+            code_changed:
+              - 'src/**'
+              - 'pyproject.toml'
+              - 'poetry.lock'
+              - 'Dockerfile*'
+              - 'start.sh'
+              - 'setup.py'
+              - 'requirements*.txt'
+              - '.env*'
+              - 'Makefile'
+
+  lint:
+    name: Lint Code
+    runs-on: ${{ vars.GHA_RUNNER }}
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Install poetry
+        if: ${{ vars.GHA_RUNNER }} != 'self-hosted'
+        uses: abatilo/actions-poetry@v4
+        env:
+          POETRY_HTTP_BASIC_NEXUS_INTERNAL_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          POETRY_HTTP_BASIC_NEXUS_INTERNAL_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+
+      - name: Install poetry manually (fallback for self-hosted runners)
+        if: ${{ vars.GHA_RUNNER }} == 'self-hosted'
+        env:
+          POETRY_HTTP_BASIC_NEXUS_INTERNAL_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          POETRY_HTTP_BASIC_NEXUS_INTERNAL_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+        run: |
+          curl -sL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - uses: actions/cache@v3
+        name: Define a cache for the virtual environment based on the dependencies lock file
+        if: github.event.inputs.skip_tests != 'true' || github.event.inputs.publish_pypi == 'true' || github.event_name == 'push' || github.event_name == 'pull_request'
+        with:
+          path: ./.venv
+          key: venv-${{ hashFiles('poetry.lock') }}
+
+      - name: Install dependencies (dev only for lint)
+        run: |
+          poetry install --only dev
+        env:
+          POETRY_HTTP_BASIC_NEXUS_INTERNAL_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          POETRY_HTTP_BASIC_NEXUS_INTERNAL_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+
+      - name: Run linting
+        run: make lint
+        env:
+          POETRY_HTTP_BASIC_NEXUS_INTERNAL_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          POETRY_HTTP_BASIC_NEXUS_INTERNAL_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+
+  unit-test:
+    name: Unit Tests
+    runs-on: ${{ vars.GHA_RUNNER }}
+    if: github.event.inputs.skip_tests != 'true'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Install poetry
+        if: ${{ vars.GHA_RUNNER }} != 'self-hosted'
+        uses: abatilo/actions-poetry@v4
+        env:
+          POETRY_HTTP_BASIC_NEXUS_INTERNAL_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          POETRY_HTTP_BASIC_NEXUS_INTERNAL_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+
+      - name: Install poetry manually (fallback for self-hosted runners)
+        if: ${{ vars.GHA_RUNNER }} == 'self-hosted'
+        env:
+          POETRY_HTTP_BASIC_NEXUS_INTERNAL_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          POETRY_HTTP_BASIC_NEXUS_INTERNAL_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+        run: |
+          curl -sL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - uses: actions/cache@v3
+        name: Define a cache for the virtual environment based on the dependencies lock file
+        if: github.event.inputs.skip_tests != 'true' || github.event.inputs.publish_pypi == 'true' || github.event_name == 'push'
+        with:
+          path: ./.venv
+          key: venv-${{ hashFiles('poetry.lock') }}
+
+      - name: Install dependencies
+        if: github.event.inputs.skip_tests != 'true' || github.event.inputs.publish_pypi == 'true' || github.event_name == 'push'
+        run: |
+          poetry install --with dev
+        env:
+          POETRY_HTTP_BASIC_NEXUS_INTERNAL_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          POETRY_HTTP_BASIC_NEXUS_INTERNAL_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+
+      - name: Run unit tests (no Docker)
+        run: poetry run pytest tests/ -m "unit" -v
+        env:
+          CELERY_BROKER_URL: "memory://"
+          TESTING: "true"
+          DATABASE_URL: "sqlite:///:memory:"
+          POSTGRES_USER: testuser
+          CELERY_RESULT_BACKEND: "cache+memory://"
+          POSTGRES_PASSWORD: testpassword
+          POSTGRES_DB: plosolver
+          POSTGRES_HOST: localhost
+          RABBITMQ_HOST: localhost
+
+          BACKEND_LOGS: ""  # Disable file logging in CI
+
+      - name: Upload test coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-coverage-${{ github.sha }}
+          path: |
+            htmlcov/
+          retention-days: 30
+
+  build-amd-images:
+    name: Build and Push Images
+    runs-on: ${{ vars.GHA_RUNNER }}
+    needs: [detect-changes]
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      CORE_VERSION: "1.0.0"
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - image: celery-worker
+            context: .
+            file: Dockerfile
+            changed_output: code_changed
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check if changes detected
+        id: check-changes
+        run: |
+          CHANGED="${{ needs.detect-changes.outputs[matrix.changed_output] }}"
+          echo "Changes detected for ${{ matrix.image }}: $CHANGED"
+
+          if [ "$CHANGED" = "true" ]; then
+            echo "Building new image for ${{ matrix.image }}"
+            echo "should_build=true" >> $GITHUB_OUTPUT
+          else
+            echo "No changes detected for ${{ matrix.image }}, using master image"
+            echo "should_build=false" >> $GITHUB_OUTPUT
+            echo "image_tag=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.image }}:master" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Show detected changes
+        if: steps.check-changes.outputs.should_build == 'true'
+        run: |
+          echo "🔍 Changes detected in the following files:"
+          git diff --name-only ${{ github.event.before }} ${{ github.sha }} || echo "No diff available (likely a new branch or tag)"
+          echo ""
+          echo "📋 Files that triggered the build:"
+          git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep -E "(src/|pyproject\.toml|poetry\.lock|Dockerfile|start\.sh|setup\.py|requirements|\.env|Makefile)" || echo "No relevant files changed"
+
+      - name: Skip build for ${{ matrix.image }}
+        if: steps.check-changes.outputs.should_build == 'false'
+        run: |
+          echo "✅ Skipping build for ${{ matrix.image }} - no changes detected"
+          echo "📦 Using existing image: ${{ steps.check-changes.outputs.image_tag }}"
+
+      - name: Login to Docker Hub
+        if: steps.check-changes.outputs.should_build == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        if: steps.check-changes.outputs.should_build == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Determine platforms
+        if: steps.check-changes.outputs.should_build == 'true'
+        id: platforms
+        run: |
+          REF="${GITHUB_REF}"
+          PLATFORMS="linux/amd64"
+          echo "value=$PLATFORMS" >> "$GITHUB_OUTPUT"
+
+      - name: Extract metadata
+        if: steps.check-changes.outputs.should_build == 'true'
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.image }}
+          tags: |
+            type=raw,value=PR-${{ github.event.pull_request.number }},enable=${{ github.event_name == 'pull_request' }}
+            type=raw,value=latest-${{ github.event.pull_request.number }},enable=${{ github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/') || startsWith(github.ref, 'refs/heads/') || github.ref == 'refs/heads/master'}}
+            type=raw,value=staging,enable=${{ github.ref == 'refs/heads/master' }}
+            type=raw,value=master,enable=${{ github.ref == 'refs/heads/master' }}
+            type=raw,value=production,enable=${{ github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/') }}
+            type=semver,pattern={{version}},enable=${{ startsWith(github.ref, 'refs/tags/') }}
+
+      - name: Build and push ${{ matrix.image }}
+        if: steps.check-changes.outputs.should_build == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: ${{ steps.platforms.outputs.value }}
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.image }}:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.image }}:buildcache,mode=max
+          build-args: |
+            BUILD_ENV=production
+            CORE_VERSION=${{ env.CORE_VERSION }}
+            PIP_INDEX_URL=${{ secrets.PIP_INDEX_URL }}
+            PIP_TRUSTED_HOST=${{ secrets.PIP_TRUSTED_HOST }}
+          secrets: |
+            "nexus_username=${{ secrets.NEXUS_PYPI_USERNAME }}"
+            "nexus_password=${{ secrets.NEXUS_PYPI_PASSWORD }}"
+
+  # build-arm-images:
+  #   name: Build and Push ARM Images
+  #   runs-on: [ubuntu-arm-latest]
+  #   needs: [publish, detect-changes, cancel-pr-jobs]
+  #   permissions:
+  #     contents: read
+    #   strategy:
+  #     fail-fast: true
+  #     matrix:
+  #       include:
+  #         - image: frontend
+  #           context: src/frontend
+  #           file: src/frontend/Dockerfile
+  #           changed_output: frontend_changed
+  #         - image: backend
+  #           context: src/backend
+  #           file: src/backend/Dockerfile
+  #           changed_output: code_changed
+  #         - image: celery-worker
+  #           context: src/celery
+  #           file: src/celery/Dockerfile
+  #           changed_output: celery_changed
+  #         - image: db-init
+  #           context: src/db-init
+  #           file: src/db-init/Dockerfile
+  #           changed_output: db_init_changed
+  #         - image: rabbitmq-init
+  #           context: src/rabbitmq-init
+  #           file: src/rabbitmq-init/Dockerfile
+  #           changed_output: rabbitmq_init_changed
+  #         - image: playwright
+  #           context: src/frontend
+  #           file: src/frontend/Dockerfile.playwright
+  #           changed_output: playwright_changed
+  #   steps:
+  #     - uses: actions/checkout@v5
+
+  #     - name: Check if changes detected
+  #       id: check-changes
+  #       run: |
+  #         CHANGED="${{ needs.detect-changes.outputs[matrix.changed_output] }}"
+  #         echo "Changes detected for ${{ matrix.image }}: $CHANGED"
+  #
+  #         if [ "$CHANGED" = "true" ]; then
+  #           echo "Building new image for ${{ matrix.image }}"
+  #           echo "should_build=true" >> $GITHUB_OUTPUT
+  #         else
+  #           echo "No changes detected for ${{ matrix.image }}, using master image"
+  #           echo "should_build=false" >> $GITHUB_OUTPUT
+  #           echo "image_tag=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.image }}:master" >> $GITHUB_OUTPUT
+  #         fi
+
+  #     - name: Login to Docker Hub
+  #       if: steps.check-changes.outputs.should_build == 'true'
+  #       uses: docker/login-action@v3
+  #       with:
+  #         username: ${{ secrets.DOCKERHUB_USERNAME }}
+  #         password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+  #     - name: Set up Docker Buildx
+  #       if: steps.check-changes.outputs.should_build == 'true'
+  #       uses: docker/setup-buildx-action@v3
+
+  #     - name: Determine platforms
+  #       if: steps.check-changes.outputs.should_build == 'true'
+  #       id: platforms
+  #       run: |
+  #         REF="${GITHUB_REF}"
+  #         PLATFORMS="linux/arm64/v8"
+  #         echo "value=$PLATFORMS" >> "$GITHUB_OUTPUT"
+
+  #     - name: Extract metadata
+  #       if: steps.check-changes.outputs.should_build == 'true'
+  #       id: meta
+  #       uses: docker/metadata-action@v5
+  #       with:
+  #         images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.image }}
+  #         tags: |
+  #           type=raw,value=PR-${{ github.event.pull_request.number }},enable=${{ github.event_name == 'pull_request' }}
+  #           type=raw,value=staging,enable=${{ github.ref == 'refs/heads/develop' }}
+  #           type=raw,value=master,enable=${{ github.ref == 'refs/heads/master' }}
+  #           type=raw,value=production,enable=${{ github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/') }}
+  #           type=semver,pattern={{version}},enable=${{ startsWith(github.ref, 'refs/tags/') }}
+  #           type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') }}
+
+  #     - name: Build and push ${{ matrix.image }}
+  #       if: steps.check-changes.outputs.should_build == 'true'
+  #       uses: docker/build-push-action@v6
+  #       with:
+  #         context: ${{ matrix.context }}
+  #         file: ${{ matrix.file }}
+  #         push: true
+  #         tags: ${{ steps.meta.outputs.tags }}
+  #         labels: ${{ steps.meta.outputs.labels }}
+  #         platforms: ${{ steps.platforms.outputs.value }}
+  #         cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.image }}:buildcache
+  #         cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.image }}:buildcache,mode=max
+  #         build-args: |
+  #           NODE_ENV=production
+  #           REACT_APP_API_URL=/api
+  #           BUILD_ENV=production
+  #           PIP_INDEX_URL=${{ secrets.PIP_INDEX_URL }}
+  #           PIP_TRUSTED_HOST=${{ secrets.PIP_TRUSTED_HOST }}
+  #           NEXUS_PYPI_PASSWORD=${{ secrets.NEXUS_PASSWORD }}
+  #         secrets: |
+  #           "nexus_password=${{ secrets.NEXUS_PASSWORD }}"
+
+  #     - name: Skip build for ${{ matrix.image }}
+  #       if: steps.check-changes.outputs.should_build == 'false'
+  #       run: |
+  #         echo "✅ Skipping build for ${{ matrix.image }} - no changes detected"
+  #         echo "📦 Using existing image: ${{ steps.check-changes.outputs.image_tag }}"

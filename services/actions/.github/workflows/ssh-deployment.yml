@@ -1,0 +1,138 @@
+name: 'SSH Deployment Workflow'
+
+on:
+  workflow_call:
+    inputs:
+      app_name:
+        description: 'Path to the application'
+        required: true
+        type: string
+      environment_vars:
+        description: 'JSON object containing environment variables to export. Example: {"APP_PATH":"/var/www/app","ENVIRONMENT":"production"}'
+        required: false
+        type: string
+        default: '{}'
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        type: string
+        default: 'production'
+      timeout:
+        description: 'Timeout for SSH connection in seconds'
+        required: false
+        type: string
+        default: '300'
+      branch:
+        description: 'Branch to deploy'
+        required: true
+        type: string
+        default: 'master'
+      compose_file:
+        description: 'Docker Compose file to use'
+        required: false
+        type: string
+        default: 'docker-compose.cloud.yml'
+
+jobs:
+  deploy:
+    runs-on: ${{ vars.GHA_RUNNER }}
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Resolve inputs
+        id: vars
+        run: |
+          echo "TAG=${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}" >> $GITHUB_OUTPUT
+          echo "HOST=${{ secrets.DEPLOY_HOST }}" >> $GITHUB_OUTPUT
+          echo "USER=${{ secrets.DEPLOY_USER }}" >> $GITHUB_OUTPUT
+
+      - name: Validate production deployment source
+        if: inputs.environment == 'production'
+        run: |
+          # Only allow production deploys from master branch and production tags (v*.*.*)
+          if [[ "${GITHUB_REF}" != "refs/heads/master" && "${GITHUB_REF}" != refs/tags/v* ]]; then
+            echo "Production deployment is only allowed from the master branch or production tags (v*.*.*)."
+            exit 1
+          fi
+     
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ vars.HOST }}
+          username: ${{ vars.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          timeout: ${{ inputs.timeout }}
+          allenvs: true
+          script: |
+            set -e
+
+            ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+            
+            # Parse and export environment variables from JSON input
+            if [ "${{ inputs.environment_vars }}" != "{}" ]; then
+              echo "🔧 Setting environment variables..."
+              echo '${{ inputs.environment_vars }}' | jq -r 'to_entries | .[] | "export " + .key + "=\"" + .value + "\""' | while read -r line; do
+                eval "$line"
+                echo "  $line"
+              done
+            fi
+            
+            mkdir -p ~/ploscope
+
+            # Check if the Docker network 'plo-network-cloud' exists, create if not
+            if ! docker network inspect plo-network-cloud >/dev/null 2>&1; then
+              echo "🔗 Creating Docker network plo-network-cloud with subnet 172.30.1.0/24..."
+              docker network create --subnet=172.30.1.0/24 plo-network-cloud
+            else
+              echo "🔗 Docker network plo-network-cloud already exists."
+            fi
+            
+            if [ ! -d "$HOME/ploscope/{{ inputs.app_name }}/.git" ]; then
+              echo "📥 Repository doesn't exist, cloning..."
+              cd ~/ploscope
+              git clone git@github.com:ploscope/{{ inputs.app_name }}.git {{ inputs.app_name }}
+              cd {{ inputs.app_name }}
+              git checkout ${{ inputs.branch }}
+            else
+              echo "📂 Repository exists, pulling latest changes..."
+              cd ~/ploscope/{{ inputs.app_name }}
+              git fetch origin
+              git reset --hard origin/${{ inputs.branch }}
+            fi
+            
+            # Loop through environment_vars and export them
+            if [ "${{ inputs.environment_vars }}" != "{}" ]; then
+              echo "🔧 Exporting environment variables from environment_vars..."
+              echo '${{ inputs.environment_vars }}' | jq -r 'to_entries | .[] | "export " + .key + "=\"" + .value + "\""' | while read -r line; do
+                eval "$line"
+                echo "  $line"
+              done
+            fi
+
+            echo "🔧 Starting Docker Compose..."
+            docker compose -f ${{ inputs.compose_file }} up -d
+
+
+            # Wait for the ${{ inputs.app_name }} container to become healthy before exiting
+            echo "⏳ Waiting for ${{ inputs.app_name }} container to become healthy..."
+            for i in {1..30}; do
+              STATUS=$(docker inspect --format='{{.State.Health.Status}}' ${{ inputs.app_name }}-${{ inputs.environment }} 2>/dev/null || echo "notfound")
+              if [ "$STATUS" = "healthy" ]; then
+                echo "✅ ${{ inputs.app_name }} container is healthy."
+                break
+              elif [ "$STATUS" = "unhealthy" ]; then
+                echo "❌ ${{ inputs.app_name }} container is unhealthy."
+                exit 1
+              elif [ "$STATUS" = "notfound" ]; then
+                echo "❌ ${{ inputs.app_name }} container is not found."  
+                exit 1
+              else
+                echo "⏳ Waiting for health status... (current: $STATUS)"
+              fi
+
+              sleep 1
+              if [ $i -eq 30 ]; then
+                echo "❌ Timeout waiting for ${{ inputs.app_name }} container to become healthy."
+                exit 1
+              fi
+            done

@@ -1,0 +1,43 @@
+@use '../../../styles/Variables' as *;
+
+/* Deal Cards Button Styles */
+.deal-cards-section {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 200px;
+  padding: 2rem;
+}
+
+.deal-cards-button {
+  background: var(--primary-color);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  padding: 1rem 2rem;
+  font-size: 1.2rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(229, 57, 53, 0.3);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+
+  &:hover {
+    background: var(--red-dark);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(229, 57, 53, 0.4);
+  }
+
+  &:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 8px rgba(229, 57, 53, 0.3);
+  }
+
+  /* Mobile: Smaller button */
+  @media (max-width: 768px) {
+    padding: 0.8rem 1.5rem;
+    font-size: 1rem;
+    border-radius: 8px;
+  }
+}

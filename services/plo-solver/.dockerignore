@@ -1,0 +1,200 @@
+# Global Docker ignore to minimize build context and speed builds
+
+# Git and VCS
+.git
+.gitignore
+.gitattributes
+
+# Python caches and venvs
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/*.so
+**/.mypy_cache/
+**/.pytest_cache/
+**/.ruff_cache/
+**/.venv/
+**/venv/
+
+# Node/Frontend
+**/node_modules/
+**/.next/
+**/build/
+**/dist/
+**/.cache/
+
+# IDE/editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Local data and logs
+data/
+logs/
+reports/
+screenshots/
+htmlcov/
+coverage/
+**/uploads/
+
+# Docker and compose artifacts
+**/tmp/
+**/.DS_Store
+
+# Tests and docs (not needed in runtime images)
+docs/
+**/tests/
+**/test-results/
+**/postman/
+
+# Large vendored Python source for celery build (exclude unless explicitly needed)
+src/celery/Python-3.11.9/
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Documentation
+docs/
+*.md
+README*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+
+# Coverage reports
+htmlcov/
+.coverage
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Test files
+tests/
+test_*
+*_test.py
+pytest.ini
+pytest_*.ini
+__tests__/
+*.test.js
+*.spec.js
+
+# Development files
+.env*
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Cache directories
+.cache/
+solver_cache/
+instance/
+
+# Uploads (will be created in container)
+uploads/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Build artifacts
+dist/
+build/
+.next/
+out/
+
+# Coverage
+coverage/
+
+# Selenium
+__tests__/selenium/reports/
+__tests__/selenium/screenshots/
+
+# Cucumber
+__tests__/cucumber/reports/
+
+# Backup files
+backups/
+
+# Data files
+data/
+
+# Scripts that aren't needed in production
+scripts/testing/
+scripts/development/
+# Allow specific testing scripts needed by Jenkins
+!scripts/testing/test-semgrep-sarif.sh 
+
+# Large, unused sources that bloat Docker context
+src/celery/Python-3.11.9/
+
+# CI artifacts not needed for image builds
+screenshots/
+reports/
+test-results/

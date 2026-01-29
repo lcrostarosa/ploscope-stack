@@ -1,0 +1,21 @@
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: SlackAlerts
+    receivers:
+      - uid: slack-alerts
+        type: slack
+        settings:
+          url: https://hooks.slack.com/services/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
+          recipient: "#alerts"
+          username: PLOSolver Alerts
+
+policies:
+  - orgId: 1
+    receiver: SlackAlerts
+    group_by:
+      - alertname
+    routes: []
+
+

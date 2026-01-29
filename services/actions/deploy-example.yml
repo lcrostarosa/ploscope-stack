@@ -1,0 +1,93 @@
+name: Deploy Example App
+
+on:
+  workflow_call:
+    inputs:
+      app_name:
+        description: 'Application name to deploy'
+        required: true
+        default: 'myapp'
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+          - development
+
+jobs:
+  deploy:
+    runs-on: ${{ vars.GHA_RUNNER }}
+    steps:
+      - name: Deploy Application
+        uses: ./
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          timeout: 300
+          environment_vars: |
+            {
+              "APP_NAME": "${{ inputs.app_name }}",
+              "ENVIRONMENT": "${{ inputs.environment }}",
+              "APP_PATH": "/var/www/${{ inputs.app_name }}",
+              "NODE_ENV": "${{ inputs.environment }}",
+              "PORT": "3000",
+              "VERSION": "${{ github.sha }}"
+            }
+          script: |
+            echo "🚀 Deploying ${{ inputs.app_name }} to ${{ inputs.environment }}..."
+            
+            # Create application directory
+            mkdir -p ${APP_PATH}
+            
+            # Navigate to app directory
+            cd ${APP_PATH}
+            
+            # Pull latest changes (assuming git repository)
+            if [ -d ".git" ]; then
+              echo "📥 Pulling latest changes..."
+              git fetch origin
+              git reset --hard origin/main
+            else
+              echo "📥 Cloning repository..."
+              git clone https://github.com/your-org/${{ inputs.app_name }}.git .
+            fi
+            
+            # Install dependencies
+            echo "📦 Installing dependencies..."
+            npm ci --production
+            
+            # Build application (if needed)
+            if [ -f "package.json" ] && grep -q "\"build\"" package.json; then
+              echo "🔨 Building application..."
+              npm run build
+            fi
+            
+            # Restart application
+            echo "🔄 Restarting application..."
+            if pm2 list | grep -q "${APP_NAME}"; then
+              pm2 restart ${APP_NAME}
+            else
+              pm2 start npm --name "${APP_NAME}" -- start
+            fi
+            
+            # Health check
+            echo "⏳ Waiting for application to be ready..."
+            for i in {1..30}; do
+              if curl -f http://localhost:${PORT}/health >/dev/null 2>&1; then
+                echo "✅ Application is healthy!"
+                break
+              fi
+              echo "⏳ Attempt $i/30 - waiting for application..."
+              sleep 5
+            done
+            
+            if [ $i -eq 30 ]; then
+              echo "❌ Application failed to become healthy within timeout"
+              exit 1
+            fi
+            
+            echo "🎉 Deployment completed successfully!"

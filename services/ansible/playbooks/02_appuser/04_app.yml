@@ -1,0 +1,9 @@
+---
+- name: Clone the PLOSolver repository (as appuser)
+  git:
+    repo: "{{ git_repo_url }}"
+    dest: "{{ project_dir }}"
+    version: master
+    accept_hostkey: yes
+  become: no
+  become_user: appuser

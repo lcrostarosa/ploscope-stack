@@ -1,0 +1,251 @@
+name: Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      branch_or_pr:
+        description: 'Branch or PR number to deploy from (e.g., "feature/new-feature" or "123" for PR #123)'
+        required: false
+        type: string
+      tag:
+        description: 'Image tag to deploy (production requires a specific tag, staging defaults to branch name)'
+        required: false
+        type: string
+      force_deploy:
+        description: 'Force deployment even if no changes'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  actions: write
+  deployments: write
+  checks: write
+  packages: write
+  pages: write
+  discussions: write
+
+env:
+  REGISTRY: docker.io
+  IMAGE_NAME: ploscope
+
+jobs:
+  deploy:
+    name: Deploy (Staging/Production)
+    runs-on: ${{ vars.GHA_RUNNER }}
+    timeout-minutes: 5
+    environment: ${{ github.event.inputs.environment }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.inputs.branch_or_pr || 'master' }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate branch for production
+        if: github.event.inputs.environment == 'production'
+        run: |
+          BRANCH="${{ github.event.inputs.branch_or_pr || 'master' }}"
+          if [ "$BRANCH" != "master" ]; then
+            echo "❌ Production deployments can only be made from the 'master' branch"
+            echo "Current branch: $BRANCH"
+            exit 1
+          fi
+          echo "✅ Production deployment validated - using master branch"
+
+      - name: Validate required secrets
+        run: |
+          if [ -z "${{ secrets.SSH_PRIVATE_KEY }}" ]; then echo "Missing required secret: SSH_PRIVATE_KEY"; exit 1; fi
+          if [ -z "${{ secrets.SSH_HOST }}" ]; then echo "Missing required secret: SSH_HOST"; exit 1; fi
+          if [ -z "${{ secrets.SSH_USER }}" ]; then echo "Missing required secret: SSH_USER"; exit 1; fi
+          if [ -z "${{ secrets.APP_PATH }}" ]; then echo "Missing required secret: APP_PATH"; exit 1; fi
+
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Add server to known hosts
+        run: |
+          ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Determine version and branch
+        id: version
+        run: |
+          ENVIRONMENT="${{ github.event.inputs.environment }}"
+          BRANCH_OR_PR="${{ github.event.inputs.branch_or_pr || 'master' }}"
+          MANUAL_TAG="${{ github.event.inputs.tag }}"
+
+          if [ "$ENVIRONMENT" = "production" ]; then
+            if [ -z "$MANUAL_TAG" ]; then
+              echo "For production deployments, you must provide the image tag via the 'tag' input (e.g., 1.2.3)."
+              exit 1
+            fi
+            echo "TAG=$MANUAL_TAG" >> $GITHUB_OUTPUT
+            echo "DEPLOY_BRANCH=master" >> $GITHUB_OUTPUT
+          else
+            # Staging deployment
+            if [ -n "$MANUAL_TAG" ]; then
+              # Manual tag provided
+              echo "TAG=$MANUAL_TAG" >> $GITHUB_OUTPUT
+              echo "DEPLOY_BRANCH=$BRANCH_OR_PR" >> $GITHUB_OUTPUT
+            else
+              # Default to branch name as tag
+              echo "TAG=$BRANCH_OR_PR" >> $GITHUB_OUTPUT
+              echo "DEPLOY_BRANCH=$BRANCH_OR_PR" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+          echo "Using tag: ${{ steps.version.outputs.TAG }}"
+          echo "Deploying from branch: ${{ steps.version.outputs.DEPLOY_BRANCH }}"
+
+      - name: Deploy to server
+        run: |
+          ENVIRONMENT="${{ github.event.inputs.environment }}"
+          TAG="${{ steps.version.outputs.TAG }}"
+          DEPLOY_BRANCH="${{ steps.version.outputs.DEPLOY_BRANCH }}"
+          HOST="${{ secrets.SSH_HOST }}"
+          USER="${{ secrets.SSH_USER }}"
+          APP_PATH="${{ secrets.APP_PATH }}"
+
+          echo "🚀 Starting $ENVIRONMENT deployment..."
+          echo "📦 Tag: $TAG"
+          echo "🌿 Branch: $DEPLOY_BRANCH"
+
+          # Execute deployment on server
+          ssh $USER@$HOST << EOF
+            set -e
+            echo "📦 Updating code from repository..."
+            cd "$APP_PATH"
+            git fetch origin
+            git reset --hard origin/$DEPLOY_BRANCH
+
+            echo "🐳 Checking and pulling images from registry..."
+            # Check each image individually and use staging fallback if needed
+            if docker manifest inspect ${REGISTRY}/${{ env.IMAGE_NAME }}/frontend:${TAG} >/dev/null 2>&1; then
+              echo "✅ Frontend image found: ${TAG}"
+              FRONTEND_TAG="${TAG}"
+              docker pull ${REGISTRY}/${{ env.IMAGE_NAME }}/frontend:${TAG}
+            else
+              echo "⚠️  Frontend image not found, using staging"
+              FRONTEND_TAG="staging"
+              docker pull ${REGISTRY}/${{ env.IMAGE_NAME }}/frontend:staging
+            fi
+
+            if docker manifest inspect ${REGISTRY}/${{ env.IMAGE_NAME }}/backend:${TAG} >/dev/null 2>&1; then
+              echo "✅ Backend image found: ${TAG}"
+              BACKEND_TAG="${TAG}"
+              docker pull ${REGISTRY}/${{ env.IMAGE_NAME }}/backend:${TAG}
+            else
+              echo "⚠️  Backend image not found, using staging"
+              BACKEND_TAG="staging"
+              docker pull ${REGISTRY}/${{ env.IMAGE_NAME }}/backend:staging
+            fi
+
+            if docker manifest inspect ${REGISTRY}/${{ env.IMAGE_NAME }}/celery-worker:${TAG} >/dev/null 2>&1; then
+              echo "✅ Celery image found: ${TAG}"
+              CELERY_TAG="${TAG}"
+              docker pull ${REGISTRY}/${{ env.IMAGE_NAME }}/celery-worker:${TAG}
+            else
+              echo "⚠️  Celery image not found, using staging"
+              CELERY_TAG="staging"
+              docker pull ${REGISTRY}/${{ env.IMAGE_NAME }}/celery-worker:staging
+            fi
+
+            if docker manifest inspect ${REGISTRY}/${{ env.IMAGE_NAME }}/db-init:${TAG} >/dev/null 2>&1; then
+              echo "✅ DB Init image found: ${TAG}"
+              DB_INIT_TAG="${TAG}"
+              docker pull ${REGISTRY}/${{ env.IMAGE_NAME }}/db-init:${TAG}
+            else
+              echo "⚠️  DB Init image not found, using staging"
+              DB_INIT_TAG="staging"
+              docker pull ${REGISTRY}/${{ env.IMAGE_NAME }}/db-init:staging
+            fi
+
+            if docker manifest inspect ${REGISTRY}/${{ env.IMAGE_NAME }}/rabbitmq-init:${TAG} >/dev/null 2>&1; then
+              echo "✅ RabbitMQ Init image found: ${TAG}"
+              RABBITMQ_INIT_TAG="${TAG}"
+              docker pull ${REGISTRY}/${{ env.IMAGE_NAME }}/rabbitmq-init:${TAG}
+            else
+              echo "⚠️  RabbitMQ Init image not found, using staging"
+              RABBITMQ_INIT_TAG="staging"
+              docker pull ${REGISTRY}/${{ env.IMAGE_NAME }}/rabbitmq-init:staging
+            fi
+
+            echo "🔧 Deploying application..."
+            echo "Using tags: Frontend=${FRONTEND_TAG}, Backend=${BACKEND_TAG}, Celery=${CELERY_TAG}, DB-Init=${DB_INIT_TAG}, RabbitMQ-Init=${RABBITMQ_INIT_TAG}"
+            
+            # Set environment variables for docker compose
+            export FRONTEND_TAG="${FRONTEND_TAG}"
+            export BACKEND_TAG="${BACKEND_TAG}"
+            export CELERY_TAG="${CELERY_TAG}"
+            export DB_INIT_TAG="${DB_INIT_TAG}"
+            export RABBITMQ_INIT_TAG="${RABBITMQ_INIT_TAG}"
+            
+            GITHUB_REPOSITORY=${{ github.repository }} docker compose -f docker-compose.$ENVIRONMENT.yml --env-file env.$ENVIRONMENT up -d
+
+            echo "🧹 Cleaning up unused images..."
+            docker image prune -f
+
+            echo "✅ $ENVIRONMENT deployment completed successfully!"
+            echo "🌐 Application available at: https://ploscope.com"
+            echo "📦 Images used:"
+            echo "  Frontend: ${REGISTRY}/${{ env.IMAGE_NAME }}/frontend:${FRONTEND_TAG}"
+            echo "  Backend: ${REGISTRY}/${{ env.IMAGE_NAME }}/backend:${BACKEND_TAG}"
+            echo "  Celery: ${REGISTRY}/${{ env.IMAGE_NAME }}/celery-worker:${CELERY_TAG}"
+            echo "  DB Init: ${REGISTRY}/${{ env.IMAGE_NAME }}/db-init:${DB_INIT_TAG}"
+            echo "  RabbitMQ Init: ${REGISTRY}/${{ env.IMAGE_NAME }}/rabbitmq-init:${RABBITMQ_INIT_TAG}"
+          EOF
+
+      - name: Health check
+        run: |
+          echo "🏥 Performing health check..."
+          sleep 60  # Wait for deployment to complete
+
+          # Check if the application is responding
+          for i in {1..10}; do
+            if curl -f -s https://ploscope.com > /dev/null; then
+              echo "✅ Application is healthy and responding"
+              break
+            else
+              echo "⏳ Waiting for application to be ready... (attempt $i/10)"
+              sleep 15
+            fi
+          done
+
+          # Final health check
+          if ! curl -f -s https://ploscope.com > /dev/null; then
+            echo "❌ Application health check failed"
+            exit 1
+          fi
+
+      - name: Notify deployment status
+        if: always()
+        run: |
+          ENVIRONMENT="${{ github.event.inputs.environment }}"
+          TAG="${{ steps.version.outputs.TAG }}"
+          DEPLOY_BRANCH="${{ steps.version.outputs.DEPLOY_BRANCH }}"
+
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "🎉 $ENVIRONMENT deployment completed successfully!"
+            echo "🌐 Application: https://ploscope.com"
+            echo "📊 Traefik Dashboard: https://ploscope.com:8080"
+            echo "📦 Images used:"
+            echo "  Frontend: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:${TAG}"
+            echo "  Backend: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/backend:${TAG}"
+            echo "🏷️  Tag: $TAG"
+            echo "🌿 Branch: $DEPLOY_BRANCH"
+          else
+            echo "❌ $ENVIRONMENT deployment failed!"
+            exit 1
+          fi

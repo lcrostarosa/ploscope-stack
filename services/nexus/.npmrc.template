@@ -1,0 +1,29 @@
+# NPM Registry Configuration for PLOScope Nexus
+# Copy this file to .npmrc and customize as needed
+
+# Set the default registry to the NPM group repository
+# This allows access to both internal packages and proxied public packages
+registry=https://nexus.ploscope.com/repository/npm-all/
+
+# Authentication for internal NPM repository (for publishing)
+//nexus.ploscope.com/repository/npm-internal/:_authToken=${NPM_TOKEN}
+
+# Authentication for NPM group repository (for installing)
+//nexus.ploscope.com/repository/npm-all/:_authToken=${NPM_TOKEN}
+
+# Always require authentication
+always-auth=true
+
+# Optional: Set email for publishing (replace with your email)
+//nexus.ploscope.com/repository/npm-internal/:email=npm@ploscope.com
+
+# Optional: Set username for publishing (replace with your username)
+//nexus.ploscope.com/repository/npm-internal/:username=npm-publisher
+
+# Optional: Configure scoped packages (uncomment and modify as needed)
+# @ploscope:registry=https://nexus.ploscope.com/repository/npm-internal/
+# @ploscope:authToken=${NPM_TOKEN}
+
+# Optional: Configure for specific scopes
+# @yourcompany:registry=https://nexus.ploscope.com/repository/npm-internal/
+# @yourcompany:authToken=${NPM_TOKEN}

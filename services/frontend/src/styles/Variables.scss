@@ -1,0 +1,391 @@
+// =============================================================================
+// Variables
+// =============================================================================
+
+// SCSS Variables (must be defined before CSS custom properties)
+$font-family-base:
+  'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu',
+  'Cantarell', sans-serif;
+$font-size-base: 1rem;
+$line-height-base: 1.5;
+
+// CSS Custom Properties for Theme Support - Updated for PLOScope to match old.css
+:root {
+  // Typography
+  --font-family-base: #{$font-family-base};
+  --font-size-base: #{$font-size-base};
+  --line-height-base: #{$line-height-base};
+  
+  // Dark theme colors
+  --text-primary: #f5f5f5;
+  --text-secondary: #b0b0b0;
+  --text-muted: #888888;
+  --bg-primary: #121212;
+  --bg-secondary: #1e1e1e;
+  --bg-tertiary: #2a2a2a;
+  --border-color: #2c2c2c;
+  --border-light: #2a2a2a;
+
+  // Shadows
+  --shadow-light: rgba(0, 0, 0, 0.3);
+  --shadow-medium: rgba(0, 0, 0, 0.4);
+  --shadow-heavy: rgba(0, 0, 0, 0.6);
+  --shadow-dark: rgba(0, 0, 0, 0.6);
+  --shadow-darker: rgba(0, 0, 0, 0.4);
+  --primary-shadow: rgba(229, 57, 53, 0.3);
+  --orange-shadow: rgba(255, 87, 34, 0.3);
+
+  // PLOScope Primary Colors
+  --primary-color: #e53935; // Signal Red - matches old.css
+  --primary-hover: #c62828; // Darker red for hover
+  --primary-dark: #c62828; // Electric Teal
+  --secondary-color: #00bcd4; // Signal Red
+  --accent-color: #e53935; // Light mode hover
+  --hover-color: #3c3c3c; // Component Colors
+
+  // Component Colors
+  --card-bg: #1e1e1e;
+  --input-bg: #2a2a2a;
+  --button-bg: #2a2a2a;
+  --modal-bg: rgba(0, 0, 0, 0.8);
+
+  // Card Colors
+  --card-hearts-color: #dc3545;
+  --card-diamonds-color: #007bff;
+  --card-spades-color: #000000;
+  --card-clubs-color: #28a745;
+
+  // Status Colors
+  --success-color: #28a745;
+  --success-dark: #1e7e34;
+  --success-light: rgba(40, 167, 69, 0.1);
+  --success-bg-alt: #d4edda;
+  --success-text-alt: #155724;
+  --success-border-alt: #c3e6cb;
+  --success-dark-alpha-10: rgba(21, 87, 36, 0.1);
+  --success-dark-alpha-20: rgba(40, 167, 69, 0.2);
+  --success-dark-alpha-30: rgba(40, 167, 69, 0.3);
+  --success-alt: #229954;
+  --warning-color: #ffc107;
+  --warning-light: rgba(255, 193, 7, 0.1);
+  --warning-hover: rgba(255, 193, 7, 0.2);
+  --warning-alpha-30: rgba(255, 193, 7, 0.3);
+  --warning-dark-alpha-10: rgba(133, 100, 4, 0.1);
+  --error-color: #dc3545;
+  --danger-color: #dc3545;
+  --error-light: rgba(220, 53, 69, 0.1);
+  --info-color: #17a2b8;
+  --info-bg-alt: #d1ecf1;
+  --info-text-alt: #0c5460;
+  --info-border-alt: #bee5eb;
+  --info-dark-alpha-10: rgba(12, 84, 96, 0.1);
+  --info-alt: #f39c12;
+
+  // Live Mode Betting Slider Colors - from LiveModeFromSite.css reference
+  --bet-slider-track: #ddd;
+  --bet-slider-thumb: #2196f3;
+  --bet-slider-thumb-border: #1e1e1e;
+  --bet-slider-thumb-shadow: rgba(0, 0, 0, 0.4);
+
+  // Spinner Colors for Rotating Color Effect
+  --spinner-color-1: #4dabf7;
+  --spinner-color-2: #69db7c;
+  --spinner-color-3: #ffd43b;
+  --spinner-color-4: #ff6b6b;
+  --spinner-color-5: #b197fc;
+  --spinner-color-6: #ffa94d;
+
+  // Additional Colors
+  --gray-400: #b0b0b0;
+  --gray-500: #a0a0a0;
+  --gray-300: #c0c0c0;
+  --danger-hover: #c82333;
+  --blue-primary: #2563eb;
+  --blue-hover: #1d4ed8;
+  --gray-100: #e9ecef;
+  --gray-600: #909090;
+  --blue-500: #2196f3;
+  --green-500: #45a049;
+  --gray-text: #b0b0b0;
+  --error-red: #e74c3c;
+  --error-bg: #fdf2f2;
+  --error-border: #fecaca;
+  --success-bg: #f0f9ff;
+  --success-border: #bfdbfe;
+  --auth-divider: #e1e5e9;
+  --gray-800: #888;
+  --blue-light: #e3f2fd;
+  --blue-600: #1976d2;
+  --error-dark: #d32f2f;
+  --button-disabled-bg: #e9ecef;
+  --text-dark: #ffffff;
+  --text-gray: #b0b0b0;
+  --gray-bg: #f9fafb;
+  --gray-border: #e5e7eb;
+  --blue-accent: #2563eb;
+  --blue-bg: #1d4ed8;
+  --button-gray: #6b7280;
+  --button-gray-hover: #4b5563;
+  --text-link: #2563eb;
+  --text-link-hover: #1d4ed8;
+  --link-bg: rgba(37, 99, 235, 0.05);
+  --text-gray-light: #6b7280;
+  --text-link-blue: #2563eb;
+  --text-link-blue-hover: #1d4ed8;
+  --cookie-bg: #1f2937;
+  --cookie-border: #374151;
+  --cookie-text: #f9fafb;
+  --cookie-text-gray: #d1d5db;
+  --cookie-dark-bg: #111827;
+  --cookie-dark-text: #f9fafb;
+  --cookie-light-gray: #9ca3af;
+  --cookie-link: #60a5fa;
+  --cookie-link-hover: #93c5fd;
+  --black-border: #000;
+  --gradient-orange: linear-gradient(135deg, #ff6b6b, #ff8e53);
+  --purple-500: #9c27b0;
+  --blue-light-alpha: rgba(33, 150, 243, 0.1);
+  --blue-light-alpha-20: rgba(33, 150, 243, 0.2);
+  --blue-alpha-30: rgba(33, 150, 243, 0.3);
+  --white-alpha-10: rgba(255, 255, 255, 0.1);
+  --white-alpha-20: rgba(255, 255, 255, 0.2);
+  --white-alpha-30: rgba(255, 255, 255, 0.3);
+  --white-alpha-50: rgba(255, 255, 255, 0.5);
+  --white-alpha-95: rgba(255, 255, 255, 0.95);
+  --purple-light-alpha: rgba(156, 39, 176, 0.1);
+  --purple-light-alpha-20: rgba(156, 39, 176, 0.2);
+  --green-alpha: rgba(76, 175, 80, 0.1);
+  --green-alpha-20: rgba(76, 175, 80, 0.2);
+  --green-alpha-30: rgba(76, 175, 80, 0.3);
+  --green-light-alpha-30: rgba(76, 175, 80, 0.3);
+  --green-dark-alpha-15: rgba(34, 197, 94, 0.15);
+  --orange-alpha: rgba(255, 107, 107, 0.3);
+  --orange-alpha-10: rgba(255, 107, 53, 0.1);
+  --orange-alpha-30: rgba(255, 107, 53, 0.3);
+  --red-primary: #f92e2c;
+  --red-dark: #d42323;
+  --gray-light: #c0c0c0;
+  --gray-dark: #a0a0a0;
+  --red-error: #f44336;
+  --red-error-dark: #d32f2f;
+  --red-dark-alpha-10: rgba(198, 40, 40, 0.1);
+  --red-light-alpha-10: rgba(249, 46, 44, 0.1);
+  --red-alpha-10: rgba(229, 57, 53, 0.1);
+  --red-alt: #dc2626;
+  --red-alt-dark: #b91c1c;
+  --green-light: #66bb6a;
+  --gray-medium: #bdbdbd;
+  --gray-border-alt: #adb5bd;
+  --dark-gray-alt: #2d2d2d;
+  --dark-gray-border: #404040;
+  --dark-error-bg: #3d1f1f;
+  --dark-error-text: #ff6b6b;
+  --dark-error-border: #5d2f2f;
+  --purple-dark-alt: #5a32a3;
+  --modal-bg-dark: #18181b;
+  --modal-text-dark: #f3f3f3;
+  --btn-secondary-dark: #27272a;
+  --btn-secondary-dark-hover: #3f3f46;
+  --win-color: #4caf50;
+  --beta-blue: #5d9cff;
+  --beta-blue-alpha-20: rgba(59, 130, 246, 0.2);
+  --beta-green: #4ade80;
+  --beta-apply-btn: #3b82f6;
+  --beta-apply-btn-hover: #2563eb;
+  --primary-color-rgb: 229, 57, 53;
+  --black-alpha-60: rgba(0, 0, 0, 0.6);
+  --shadow-heavier: rgba(0, 0, 0, 0.35);
+  --gradient-stamp-red: linear-gradient(45deg, #ff6b6b, #ee5a52);
+  --stamp-red: #ff6b6b;
+  --stamp-red-shadow: rgba(255, 107, 107, 0.3);
+  --gradient-stamp-alpha: linear-gradient(45deg, #4ecdc4, #44a08d);
+  --stamp-alpha-border: #4ecdc4;
+  --stamp-alpha-shadow: rgba(78, 205, 196, 0.3);
+  --red-light: #ef5350;
+  --gradient-gray: linear-gradient(135deg, #9e9e9e, #757575);
+  --gradient-red: linear-gradient(135deg, #f44336, #d32f2f);
+  --gradient-green: linear-gradient(
+    135deg,
+    var(--button-bg-2),
+    var(--green-500)
+  );
+  --gradient-gray-light: linear-gradient(135deg, #bdbdbd, #9e9e9e);
+  --orange-primary: #f57c00;
+  --dark-gray: #a0a0a0;
+  --darker-gray: #b0b0b0;
+  --purple-dark: #7b1fa2;
+  --gradient-shimmer: linear-gradient(
+    90deg,
+    #f0f0f0 25%,
+    #e0e0e0 50%,
+    #f0f0f0 75%
+  );
+  --blue-light-bg: #ffebee;
+  --red-light-text: #c62828;
+  --red-light-border: #f8bbd9;
+  --dark-red-bg: #4a1c1c;
+  --red-light: #ff8a80;
+  --red-border: #8e2424;
+  --warning-bg: #fff3cd;
+  --warning-text: #856404;
+  --warning-border: #ffeaa7;
+  --dark-warning-bg: #3d2f1f;
+  --warning-light-text: #ffeaa7;
+  --orange-600: #ff6b35;
+  --orange-700: #e55a2b;
+  --orange-800: #cc4a1f;
+  --green-600: #3d8b40;
+  --blue-700: #1565c0;
+  --purple-700: #6a1b9a;
+  --gray-light-2: #ccc;
+  --gray-text-light: #666;
+  --orange-500: #ff9800;
+  --cyan-500: #17a2b8;
+  --cyan-600: #138496;
+  --cyan-700: #117a8b;
+  --purple-600: #6f42c1;
+  --purple-700-alt: #5a32a1;
+  --purple-800: #4a2c8a;
+  --gradient-cyan: linear-gradient(45deg, #17a2b8, #138496);
+  --gradient-cyan-hover: linear-gradient(45deg, #138496, #117a8b);
+  --gradient-purple: linear-gradient(45deg, #6f42c1, #5a32a1);
+  --gradient-purple-hover: linear-gradient(45deg, #5a32a1, #4a2c8a);
+  --orange-gradient: linear-gradient(135deg, #ff6b35, #e55a2b);
+  --orange-gradient-hover: linear-gradient(135deg, #e55a2b, #cc4a1f);
+  --blue-gradient: linear-gradient(135deg, #2196f3, #1976d2);
+  --blue-gradient-hover: linear-gradient(135deg, #1976d2, #1565c0);
+  --purple-gradient: linear-gradient(135deg, #9c27b0, #7b1fa2);
+  --purple-gradient-hover: linear-gradient(135deg, #7b1fa2, #6a1b9a);
+  --green-600-alt: #3d8b40;
+  --blue-600-alt: #0062cc;
+  --blue-700-alt: #0069d9;
+  --blue-800: #0056b3;
+  --red-600: #bd2130;
+  --green-700: #218838;
+  --warning-600: #e8690b;
+  --qre-bg: #2a2a3e;
+  --qre-text: #9bb0ff;
+  --table-felt: #0b5;
+
+  // Solver Mode Colors
+  --solver-gray-bg: #6c757d;
+  --solver-blue-primary: #2196f3;
+  --solver-blue-hover: #1976d2;
+  --solver-red-primary: #f44336;
+  --solver-red-hover: #d32f2f;
+  --solver-green-primary: #28a745;
+  --solver-green-hover: #218838;
+  --solver-action-blue: #007bff;
+  --solver-action-blue-hover: #0056b3;
+  --solver-action-red: #dc3545;
+  --solver-action-red-hover: #c82333;
+  --solver-clickable-blue: #2196f3;
+  --solver-card-red: #dc3545;
+  --solver-card-black: #212529;
+  --solver-gradient-purple: linear-gradient(135deg, #9c27b0, #7b1fa2);
+  --solver-gradient-purple-hover: linear-gradient(135deg, #7b1fa2, #6a1b9a);
+  --solver-gradient-gray: linear-gradient(135deg, #6c757d, #5a6268);
+  --solver-gradient-gray-hover: linear-gradient(135deg, #5a6268, #495057);
+  --solver-dark-card-bg: #2c3e50;
+  --solver-dark-border: #34495e;
+  --solver-dark-red: #e74c3c;
+  --solver-dark-text: #ecf0f1;
+
+  // Hand History Analyzer Colors
+  --hh-header-text: #2c3e50;
+  --hh-error-bg: #fee;
+  --hh-error-border: #fcc;
+  --hh-error-text: #c33;
+  --hh-dropzone-border: #bdc3c7;
+  --hh-dropzone-bg: #f8f9fa;
+  --hh-dropzone-active-border: #3498db;
+  --hh-dropzone-active-bg: #ebf3fd;
+  --hh-status-uploading-bg: #e3f2fd;
+  --hh-status-uploading-text: #1976d2;
+  --hh-status-processing-bg: #fff3e0;
+  --hh-status-processing-text: #f57c00;
+  --hh-status-completed-bg: #e8f5e8;
+  --hh-status-completed-text: #2e7d32;
+  --hh-progress-bg: #ecf0f1;
+  --hh-progress-fill: #3498db;
+  --hh-card-border: #ddd;
+  --hh-badge-green-bg: #e8f5e8;
+  --hh-badge-green-text: #2e7d32;
+  --hh-badge-orange-bg: #fff3e0;
+  --hh-badge-orange-text: #f57c00;
+  --hh-badge-red-bg: #fee;
+  --hh-badge-red-text: #c33;
+  --hh-badge-gray-bg: #f5f5f5;
+  --hh-badge-gray-text: #666;
+  --hh-detail-border: #f0f0f0;
+  --hh-profit-text: #27ae60;
+  --hh-loss-text: #e74c3c;
+  --hh-btn-primary: #3498db;
+  --hh-btn-primary-hover: #2980b9;
+  --hh-btn-secondary: #95a5a6;
+  --hh-btn-danger: #e74c3c;
+  --hh-btn-danger-hover: #c0392b;
+  --hh-stats-border: #3498db;
+  --hh-table-header-bg: #f8f9fa;
+  --hh-table-header-text: #2c3e50;
+  --hh-table-header-border: #ddd;
+  --hh-table-row-border: #f0f0f0;
+  --hh-table-hover-bg: #f8f9fa;
+  --hh-pagination-border: #ddd;
+  --hh-pagination-text: #2c3e50;
+  --hh-pagination-hover-bg: #3498db;
+  --hh-pagination-hover-border: #3498db;
+  --hh-status: #7f8c8d;
+
+  // Gradients
+  --gradient-primary: linear-gradient(135deg, #e53935 0%, #c62828 100%);
+  --gradient-accent: linear-gradient(135deg, #00bfa5 0%, #008e76 100%);
+
+  // Player card states
+  --player-card-active: rgba(229, 57, 53, 0.1);
+  --player-card-folded: rgba(108, 117, 125, 0.1);
+  --player-card-allin: rgba(255, 193, 7, 0.1);
+  --player-card-bg: var(--bg-secondary);
+}
+
+// Additional SCSS Variables
+
+// Breakpoints
+$breakpoint-sm: 576px;
+$breakpoint-md: 768px;
+$breakpoint-lg: 992px;
+$breakpoint-xl: 1200px;
+
+// Spacing
+$spacing-xs: 0.25rem;
+$spacing-sm: 0.5rem;
+$spacing-md: 1rem;
+$spacing-lg: 1.5rem;
+$spacing-xl: 2rem;
+$spacing-xxl: 3rem;
+
+// Border radius
+$border-radius-sm: 0.25rem;
+$border-radius-md: 0.5rem;
+$border-radius-lg: 0.75rem;
+$border-radius-xl: 1rem;
+
+// Transitions
+$transition-base: all 0.3s ease;
+$transition-fast: all 0.15s ease;
+$transition-slow: all 0.5s ease;
+
+// Shadows
+$shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+$shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
+$shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
+$shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.15);
+
+// Z-index scale
+$z-index-dropdown: 1000;
+$z-index-sticky: 1020;
+$z-index-fixed: 1030;
+$z-index-modal-backdrop: 1040;
+$z-index-modal: 1050;
+$z-index-popover: 1060;
+$z-index-tooltip: 1070;

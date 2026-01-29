@@ -1,0 +1,49 @@
+# Database Init Local Development Docker Compose Configuration
+# This file contains only the db-migrate service for local development
+
+services:
+  db-migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BUILD_ENV: development
+        BUILDKIT_INLINE_CACHE: 1
+    container_name: ploscope-db-migrate-localdev
+    env_file:
+      - env.development
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_MIGRATE_HOST=${POSTGRES_MIGRATE_HOST}
+      - PGPASSWORD=${PGPASSWORD}
+      - SCHEMA_USER=${SCHEMA_USER}
+      - SCHEMA_PASSWORD=${SCHEMA_PASSWORD}
+      - POSTGRES_SCHEMA_USER=${POSTGRES_SCHEMA_USER}
+      - POSTGRES_SCHEMA_PASSWORD=${POSTGRES_SCHEMA_PASSWORD}
+      - LOG_LEVEL=${LOG_LEVEL}
+      - PYTHONUNBUFFERED=${PYTHONUNBUFFERED}
+      - PYTHONDONTWRITEBYTECODE=${PYTHONDONTWRITEBYTECODE}
+      - BUILD_ENV=${BUILD_ENV}
+      - RESTART_POLICY=${RESTART_POLICY}
+      - VOLUME_MODE=${VOLUME_MODE}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - plo-network
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "${POSTGRES_HOST}", "-U", "${POSTGRES_USER}", "-d", "${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: "no"
+
+networks:
+  plo-network:
+    external: true
+

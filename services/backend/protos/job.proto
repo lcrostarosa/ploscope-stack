@@ -1,0 +1,107 @@
+syntax = "proto3";
+
+package plosolver.job;
+
+option go_package = "github.com/plosolver/backend/protos/job";
+option java_multiple_files = true;
+option java_package = "com.plosolver.grpc.job";
+option java_outer_classname = "JobProto";
+
+import "google/protobuf/timestamp.proto";
+import "common.proto";
+
+// =============================================================================
+// Job Service
+// =============================================================================
+
+service JobService {
+  rpc CreateJob(CreateJobRequest) returns (CreateJobResponse);
+  rpc GetJob(GetJobRequest) returns (GetJobResponse);
+  rpc ListJobs(ListJobsRequest) returns (ListJobsResponse);
+  rpc UpdateJob(UpdateJobRequest) returns (UpdateJobResponse);
+  rpc DeleteJob(DeleteJobRequest) returns (DeleteJobResponse);
+  rpc CancelJob(CancelJobRequest) returns (CancelJobResponse);
+}
+
+message CreateJobRequest {
+  string user_id = 1;
+  string job_type = 2;
+  map<string, string> parameters = 3;
+  int32 priority = 4;
+}
+
+message CreateJobResponse {
+  Job job = 1;
+  plosolver.common.Error error = 2;
+}
+
+message GetJobRequest {
+  string job_id = 1;
+  string user_id = 2;
+}
+
+message GetJobResponse {
+  Job job = 1;
+  plosolver.common.Error error = 2;
+}
+
+message ListJobsRequest {
+  string user_id = 1;
+  string status = 2;
+  string job_type = 3;
+  plosolver.common.PaginationRequest pagination = 4;
+}
+
+message ListJobsResponse {
+  repeated Job jobs = 1;
+  plosolver.common.PaginationResponse pagination = 2;
+  plosolver.common.Error error = 3;
+}
+
+message UpdateJobRequest {
+  string job_id = 1;
+  string user_id = 2;
+  string status = 3;
+  map<string, string> result = 4;
+  string error_message = 5;
+}
+
+message UpdateJobResponse {
+  Job job = 1;
+  plosolver.common.Error error = 2;
+}
+
+message DeleteJobRequest {
+  string job_id = 1;
+  string user_id = 2;
+}
+
+message DeleteJobResponse {
+  bool success = 1;
+  plosolver.common.Error error = 2;
+}
+
+message CancelJobRequest {
+  string job_id = 1;
+  string user_id = 2;
+}
+
+message CancelJobResponse {
+  bool success = 1;
+  plosolver.common.Error error = 2;
+}
+
+message Job {
+  string id = 1;
+  string user_id = 2;
+  string job_type = 3;
+  string status = 4;
+  map<string, string> parameters = 5;
+  map<string, string> result = 6;
+  int32 priority = 7;
+  double progress = 8;
+  string error_message = 9;
+  google.protobuf.Timestamp created_at = 10;
+  google.protobuf.Timestamp updated_at = 11;
+  google.protobuf.Timestamp completed_at = 12;
+}

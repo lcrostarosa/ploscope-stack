@@ -1,0 +1,142 @@
+// Grafana Alloy Configuration
+// This configuration replaces node_exporter, cAdvisor, and Promtail functionality
+
+// Discovery components - discovers all Docker containers
+discovery.docker "docker_containers" {
+  host = "unix:///var/run/docker.sock"
+  refresh_interval = "30s"
+}
+
+// Relabel to extract container names and IDs
+discovery.relabel "docker_labels" {
+  targets = discovery.docker.docker_containers.targets
+  
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    target_label = "container_name"
+    replacement = "$1"
+  }
+  
+  rule {
+    source_labels = ["__meta_docker_container_id"]
+    target_label = "container_id"
+    replacement = "$1"
+  }
+}
+
+// Prometheus Remote Write - sends metrics to Prometheus
+prometheus.remote_write "prometheus_receiver" {
+  endpoint {
+    url = "http://prometheus:9090/api/v1/write"
+  }
+}
+
+// Loki Write - sends logs to Loki
+loki.write "loki_receiver" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
+
+// Node Exporter functionality - system metrics
+prometheus.scrape "node_exporter" {
+  targets = [
+    {"__address__" = "localhost:9100"},
+  ]
+  forward_to = [prometheus.remote_write.prometheus_receiver.receiver]
+  scrape_interval = "15s"
+}
+
+// Container metrics from Docker using cAdvisor exporter
+prometheus.exporter.cadvisor "containers" {
+  docker_host = "unix:///var/run/docker.sock"
+  storage_duration = "5m"
+}
+
+prometheus.scrape "container_metrics" {
+  targets    = prometheus.exporter.cadvisor.containers.targets
+  forward_to = [prometheus.relabel.add_container_labels.receiver]
+  scrape_interval = "15s"
+}
+
+// Add container name labels by discovering Docker containers
+prometheus.relabel "add_container_labels" {
+  forward_to = [prometheus.remote_write.prometheus_receiver.receiver]
+  
+  // Extract container ID from the id label
+  rule {
+    source_labels = ["id"]
+    regex = "/docker/([a-z0-9]{64})"
+    target_label = "container_id_full"
+    replacement = "$1"
+  }
+  
+  // Shorten container ID to first 12 characters
+  rule {
+    source_labels = ["container_id_full"]
+    regex = "([a-z0-9]{12}).*"
+    target_label = "container_short_id"
+    replacement = "$1"
+  }
+}
+
+// Promtail functionality - log collection
+local.file_match "docker_logs" {
+  path_targets = [
+    {"__path__" = "/var/lib/docker/containers/*/*.log"},
+  ]
+  sync_period = "10s"
+}
+
+loki.source.file "docker_log_scrape" {
+  targets    = local.file_match.docker_logs.targets
+  forward_to = [loki.process.docker_logs.receiver]
+}
+
+// Process Docker logs with proper labels
+loki.process "docker_logs" {
+  stage.json {
+    expressions = {
+      output = "log",
+      stream = "stream",
+      attrs = "attrs",
+    }
+  }
+
+  stage.json {
+    expressions = {
+      tag = "attrs.tag",
+    }
+    source = "attrs"
+  }
+
+  stage.labels {
+    values = {
+      container_name = "",
+      image_name = "",
+      stream = "stream",
+    }
+  }
+
+  stage.docker {}
+
+  stage.labels {
+    values = {
+      container_name = "",
+      image_name = "",
+      tag = "",
+    }
+  }
+
+  forward_to = [loki.write.loki_receiver.receiver]
+}
+
+// Self-monitoring - Alloy metrics
+prometheus.scrape "alloy_metrics" {
+  targets = [
+    {"__address__" = "localhost:12345"},
+  ]
+  forward_to = [prometheus.remote_write.prometheus_receiver.receiver]
+  scrape_interval = "15s"
+  metrics_path = "/metrics"
+}

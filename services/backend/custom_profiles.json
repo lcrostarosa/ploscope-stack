@@ -1,0 +1,23 @@
+{
+  "nit": {
+    "name": "Nit",
+    "description": "A duplicate name",
+    "hand_range_tightness": 45,
+    "preflop_aggression": 55,
+    "flop_aggression": 60,
+    "turn_aggression": 55,
+    "river_aggression": 50,
+    "bluff_frequency": 25,
+    "value_bet_frequency": 75,
+    "fold_to_pressure": 35,
+    "threeb_frequency": 20,
+    "fourb_frequency": 10,
+    "cbet_frequency": 65,
+    "check_call_frequency": 40,
+    "donk_bet_frequency": 15,
+    "bet_sizing_aggression": 65,
+    "positional_awareness": 75,
+    "slow_play_frequency": 20,
+    "tilt_resistance": 70
+  }
+}

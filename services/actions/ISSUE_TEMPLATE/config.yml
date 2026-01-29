@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📚 Documentation
+    url: https://github.com/yourusername/PLOSolver/wiki
+    about: Check our comprehensive documentation and guides
+  - name: 💬 Community Discussion
+    url: https://github.com/yourusername/PLOSolver/discussions
+    about: Ask questions and discuss ideas with the community
+  - name: 🔒 Security Issue
+    url: https://github.com/yourusername/PLOSolver/security/advisories/new
+    about: Report security vulnerabilities privately
+  - name: 📧 Direct Contact
+    url: mailto:support@plosolver.com
+    about: Contact the development team directly 

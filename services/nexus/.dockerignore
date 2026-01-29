@@ -1,0 +1,15 @@
+# Ignore VCS and local files
+.git
+*.log
+logs/
+.env*
+.env
+.env.*
+node_modules/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+coverage/
+backup/
+nexus-data/

@@ -1,0 +1,16 @@
+[[tool.poetry.source]]
+name = "nexus"
+url = "https://nexus.ploscope.com/repository/pypi-all/simple"
+priority = "supplemental"
+
+[[tool.poetry.source]]
+name = "nexus-internal"
+url = "https://nexus.ploscope.com/repository/pypi-internal/simple"
+priority = "supplemental"
+
+[tool.poetry.dependencies.core]
+source = "nexus-internal"
+
+[virtualenvs]
+create = true
+in-project = true

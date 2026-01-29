@@ -1,0 +1,97 @@
+syntax = "proto3";
+
+package plosolver.hand_history;
+
+option go_package = "github.com/plosolver/backend/protos/hand_history";
+option java_multiple_files = true;
+option java_package = "com.plosolver.grpc.hand_history";
+option java_outer_classname = "HandHistoryProto";
+
+import "google/protobuf/timestamp.proto";
+import "common.proto";
+
+// =============================================================================
+// Hand History Service
+// =============================================================================
+
+service HandHistoryService {
+  rpc UploadHandHistory(UploadHandHistoryRequest) returns (UploadHandHistoryResponse);
+  rpc GetHandHistory(GetHandHistoryRequest) returns (GetHandHistoryResponse);
+  rpc ListHandHistories(ListHandHistoriesRequest) returns (ListHandHistoriesResponse);
+  rpc DeleteHandHistory(DeleteHandHistoryRequest) returns (DeleteHandHistoryResponse);
+  rpc AnalyzeHandHistory(AnalyzeHandHistoryRequest) returns (AnalyzeHandHistoryResponse);
+}
+
+message UploadHandHistoryRequest {
+  string user_id = 1;
+  string filename = 2;
+  bytes file_content = 3;
+  string format = 4;
+}
+
+message UploadHandHistoryResponse {
+  string hand_history_id = 1;
+  string message = 2;
+  plosolver.common.Error error = 3;
+}
+
+message GetHandHistoryRequest {
+  string hand_history_id = 1;
+  string user_id = 2;
+}
+
+message GetHandHistoryResponse {
+  HandHistory hand_history = 1;
+  plosolver.common.Error error = 2;
+}
+
+message ListHandHistoriesRequest {
+  string user_id = 1;
+  plosolver.common.PaginationRequest pagination = 2;
+}
+
+message ListHandHistoriesResponse {
+  repeated HandHistory hand_histories = 1;
+  plosolver.common.PaginationResponse pagination = 2;
+  plosolver.common.Error error = 3;
+}
+
+message DeleteHandHistoryRequest {
+  string hand_history_id = 1;
+  string user_id = 2;
+}
+
+message DeleteHandHistoryResponse {
+  bool success = 1;
+  plosolver.common.Error error = 2;
+}
+
+message AnalyzeHandHistoryRequest {
+  string hand_history_id = 1;
+  string user_id = 2;
+  AnalysisSettings settings = 3;
+}
+
+message AnalyzeHandHistoryResponse {
+  string analysis_id = 1;
+  string status = 2;
+  plosolver.common.Error error = 3;
+}
+
+message HandHistory {
+  string id = 1;
+  string user_id = 2;
+  string filename = 3;
+  string format = 4;
+  int32 num_hands = 5;
+  string status = 6;
+  google.protobuf.Timestamp uploaded_at = 7;
+  google.protobuf.Timestamp processed_at = 8;
+}
+
+message AnalysisSettings {
+  bool include_equity_analysis = 1;
+  bool include_action_recommendations = 2;
+  bool include_player_profiling = 3;
+  string output_format = 4;
+}

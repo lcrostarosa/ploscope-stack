@@ -1,0 +1,178 @@
+---
+# It is triggered by a push to the main, master, or develop branch.
+# It is also triggered by a pull request to the main, master, or develop branch.
+# It is also triggered by a tag being pushed to the repository.
+# It is also triggered by a release being published to the GitHub repository.
+# It is also triggered by a workflow_dispatch event.
+name: Database Migrations CI
+
+on:
+  pull_request:
+    branches: [main, master, develop]
+
+jobs:
+  static-analysis:
+    runs-on: ${{ vars.GHA_RUNNER }}
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Install poetry
+        if: ${{ vars.GHA_RUNNER }} != 'self-hosted'
+        uses: abatilo/actions-poetry@v4
+        env:
+          POETRY_HTTP_BASIC_NEXUS_INTERNAL_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          POETRY_HTTP_BASIC_NEXUS_INTERNAL_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+
+      - name: Install poetry manually (fallback for self-hosted runners)
+        if: ${{ vars.GHA_RUNNER }} == 'self-hosted'
+        env:
+          POETRY_HTTP_BASIC_NEXUS_INTERNAL_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          POETRY_HTTP_BASIC_NEXUS_INTERNAL_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+        run: |
+          curl -sL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - uses: actions/cache@v3
+        name: Define a cache for the virtual environment based on the dependencies lock file
+        if: github.event_name == 'push' || github.event_name == 'pull_request'
+        with:
+          path: ./.venv
+          key: venv-${{ hashFiles('poetry.lock') }}
+
+      - name: Install dependencies
+        if: github.event_name == 'push'
+        run: |
+          poetry install --with dev
+        env:
+          POETRY_HTTP_BASIC_NEXUS_INTERNAL_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          POETRY_HTTP_BASIC_NEXUS_INTERNAL_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+
+      - name: Security analysis with bandit
+        run: |
+          poetry run bandit -r env.py versions/ -f txt -o bandit-report.txt || true
+          echo "Bandit security analysis completed. Check bandit-report.txt for details."
+
+      - name: SQL analysis with sqlfluff
+        run: |
+          poetry run sqlfluff lint versions/ --format json > sqlfluff-report.json 2>&1 || true
+          poetry run sqlfluff lint versions/ --format human > sqlfluff-report.txt 2>&1 || true
+          echo "SQLFluff analysis completed. Check sqlfluff-report.txt for details."
+
+      - name: Upload security analysis results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-analysis-reports
+          path: |
+            bandit-report.json
+            bandit-report.txt
+            sqlfluff-report.json
+            sqlfluff-report.txt
+
+      - name: Display security analysis summary
+        if: always()
+        run: |
+          echo "=== Security Analysis Summary ==="
+          if [ -f bandit-report.txt ]; then
+            echo "Bandit Security Issues:"
+            cat bandit-report.txt | head -20
+          else
+            echo "No security issues found by Bandit"
+          fi
+
+          echo ""
+          echo "=== SQL Analysis Summary ==="
+          if [ -f sqlfluff-report.txt ]; then
+            echo "SQLFluff Issues:"
+            cat sqlfluff-report.txt | head -20
+          else
+            echo "No SQL issues found by SQLFluff"
+          fi
+
+  test-migrations:
+    runs-on: ${{ vars.GHA_RUNNER }}
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+
+      - name: Install poetry
+        if: ${{ vars.GHA_RUNNER }} != 'self-hosted'
+        uses: abatilo/actions-poetry@v4
+        env:
+          POETRY_HTTP_BASIC_NEXUS_INTERNAL_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          POETRY_HTTP_BASIC_NEXUS_INTERNAL_PASSWORD: ${{ secrets.NEXUS_PYPI_PASSWORD }}
+
+
+      - name: Install poetry manually (fallback for self-hosted runners)
+        if: ${{ vars.GHA_RUNNER }} == 'self-hosted'
+        run: |
+          curl -sL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+        env:
+          POETRY_HTTP_BASIC_NEXUS_INTERNAL_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          POETRY_HTTP_BASIC_NEXUS_INTERNAL_PASSWORD: ${{ secrets.NEXUS_PYPI_PASSWORD }}
+
+      - uses: actions/cache@v3
+        name: Define a cache for the virtual environment based on the dependencies lock file
+        if: github.event_name == 'push'
+        with:
+          path: ./.venv
+          key: venv-${{ hashFiles('poetry.lock') }}
+
+      - name: Install dependencies
+        if: github.event_name == 'push'
+        run: |
+          poetry install --with dev
+        env:
+          POETRY_HTTP_BASIC_NEXUS_INTERNAL_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          POETRY_HTTP_BASIC_NEXUS_INTERNAL_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+
+      - name: Start database with Docker Compose
+        run: |
+          echo "Starting database..."
+          docker compose up -d db
+
+          echo "Waiting for database to be healthy..."
+          # Wait for database to be ready (max 60 seconds)
+          for i in {1..30}; do
+            if docker compose -f exec -T db pg_isready -U postgres >/dev/null 2>&1; then
+              echo "Database is healthy!"
+              break
+            fi
+            echo "Waiting for database... ($i/30)"
+            sleep 2
+          done
+
+          # Final check
+          if ! docker compose -f exec -T db pg_isready -U postgres >/dev/null 2>&1; then
+            echo "ERROR: Database failed to become healthy within 60 seconds"
+            exit 1
+          fi
+
+      - name: Run database migrations
+        run: |
+          echo "Running database migrations..."
+          DATABASE_URL=postgresql://postgres:postgres@localhost:5432/plosolver poetry run alembic -c alembic.ini upgrade head
+
+      - name: Verify migrations
+        run: |
+          echo "Verifying migrations..."
+          DATABASE_URL=postgresql://postgres:postgres@localhost:5432/plosolver poetry run alembic -c alembic.ini current
+          DATABASE_URL=postgresql://postgres:postgres@localhost:5432/plosolver poetry run alembic -c alembic.ini history
+
+      - name: Cleanup database
+        if: always()
+        run: |
+          echo "Shutting down database..."
+          docker compose down db
+          echo "Database cleanup completed!"

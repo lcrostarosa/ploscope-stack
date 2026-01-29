@@ -1,0 +1,73 @@
+# Celery Worker Local Development Docker Compose Configuration
+# This file contains only the celeryworker service for local development
+
+services:
+  celeryworker:
+    image: ploscope/celery-worker:master
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BUILD_ENV: development
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-}
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
+        NEXUS_PYPI_USERNAME: ${NEXUS_PYPI_USERNAME:-}
+        NEXUS_PYPI_PASSWORD: ${NEXUS_PYPI_PASSWORD:-}
+        BUILDKIT_INLINE_CACHE: 1
+    container_name: ploscope-celeryworker-localdev
+    environment:
+      - LOG_LEVEL=DEBUG
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/plosolver
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=plosolver
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - SECRET_KEY=dev-secret-key-change-in-production
+      - RABBITMQ_VHOST=/plosolver
+      - RABBITMQ_USERNAME=plosolver
+      - RABBITMQ_PASSWORD=dev_password_2024
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_SPOT_QUEUE=spot-processing
+      - RABBITMQ_SOLVER_QUEUE=solver-processing
+      - RABBITMQ_SPOT_DLQ=spot-processing-dlq
+      - RABBITMQ_SOLVER_DLQ=solver-processing-dlq
+      - CELERY_BROKER_URL=amqp://plosolver:dev_password_2024@rabbitmq:5672/%2Fplosolver
+      - CELERY_RESULT_BACKEND=redis://:dev_redis_password_2024@redis:6379/0
+      - CELERY_TASK_SERIALIZER=json
+      - CELERY_RESULT_SERIALIZER=json
+      - CELERY_ACCEPT_CONTENT=['json']
+      - CELERY_TIMEZONE=UTC
+      - CELERY_ENABLE_UTC=True
+      - CELERY_TASK_TRACK_STARTED=True
+      - CELERY_TASK_TIME_LIMIT=30*60
+      - CELERY_TASK_SOFT_TIME_LIMIT=25*60
+      - CELERY_WORKER_PREFETCH_MULTIPLIER=1
+      - CELERY_WORKER_MAX_TASKS_PER_CHILD=1000
+      - CELERY_WORKER_CONCURRENCY=4
+      - CELERY_HEALTH_PORT=5002
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - REDIS_PASSWORD=dev_redis_password_2024
+      - REDIS_URL=redis://:dev_redis_password_2024@redis:6379/0
+      - BUILD_ENV=development
+      - RESTART_POLICY=unless-stopped
+      - VOLUME_MODE=rw
+      - PGPASSWORD=postgres
+    volumes:
+      - .:/app/celery-worker
+      - ./logs:/app/logs
+    networks:
+      - plo-network
+    healthcheck:
+      test: ["CMD", "/app/health_check.sh"]
+      interval: 10s
+      timeout: 15s
+      retries: 5
+      start_period: 20s
+
+networks:
+  plo-network:
+    external: true

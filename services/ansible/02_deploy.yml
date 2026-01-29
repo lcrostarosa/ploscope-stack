@@ -1,0 +1,9 @@
+---
+- name: Deploy PLOSolver to Hetzner server (appuser)
+  hosts: appuser_servers
+  become: yes
+  vars_files:
+    - variables/vars.yml    
+ 
+  tasks:
+    - import_tasks: playbooks/03_deploy/01_deploy.yml

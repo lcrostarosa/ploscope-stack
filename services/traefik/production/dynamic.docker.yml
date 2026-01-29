@@ -1,0 +1,546 @@
+# Main Traefik configuration
+entryPoints:
+  web:
+    address: ":80"
+  websecure:
+    address: ":443"
+  openvpn-tcp:
+    address: ":1194"
+
+providers:
+  file:
+    filename: /etc/traefik/dynamic.yml
+    watch: true
+
+api:
+  dashboard: true
+  insecure: true
+
+log:
+  level: INFO
+
+# Let's Encrypt configuration
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: lucas@ploscope.com
+      storage: /etc/certs/acme.json
+      httpChallenge:
+        entryPoint: web
+
+http:
+  routers:
+    # HTTP to HTTPS redirect for main domain (excluding ACME challenges)
+    http-to-https:
+      rule: "Host(`ploscope.com`) && !PathPrefix(`/.well-known/acme-challenge/`)"
+      priority: 1000
+      service: noop@internal
+      entrypoints:
+        - web
+      middlewares:
+        - redirect-to-https
+    
+    # Auth routes - HTTPS
+    auth-https:
+      rule: "Host(`ploscope.com`) && PathPrefix(`/api/auth`)"
+      priority: 3
+      service: backend
+      entrypoints:
+        - websecure
+      middlewares:
+        - cors-headers
+      tls:
+        certResolver: letsencrypt
+    
+    # Backend API routes - HTTP for ACME challenges
+    backend-http:
+      rule: "Host(`ploscope.com`) && PathPrefix(`/.well-known/acme-challenge/`)"
+      service: acme-challenge
+      entrypoints:
+        - web
+      priority: 1001
+      middlewares:
+        - cors-headers
+
+    # Backend API routes - HTTPS
+    backend-https:
+      rule: "Host(`ploscope.com`) && PathPrefix(`/api`)"
+      priority: 2
+      service: backend
+      entrypoints:
+        - websecure
+      middlewares:
+        - cors-headers
+      tls:
+        certResolver: letsencrypt
+    
+    # WebSocket routes - HTTPS
+    websocket-https:
+      rule: "Host(`ploscope.com`) && PathPrefix(`/socket.io`)"
+      priority: 10
+      service: backend
+      entrypoints:
+        - websecure
+      middlewares:
+        - websocket-headers
+      tls:
+        certResolver: letsencrypt
+    
+    # Frontend routes - HTTP for ACME challenges
+    frontend-http:
+      rule: "Host(`ploscope.com`) && PathPrefix(`/.well-known/acme-challenge/`)"
+      service: acme-challenge
+      entrypoints:
+        - web
+      priority: 1001
+      middlewares:
+        - cors-headers
+
+    # Frontend routes - HTTPS
+    frontend-https:
+      rule: "Host(`ploscope.com`)"
+      priority: 1
+      service: frontend
+      entrypoints:
+        - websecure
+      middlewares:
+        - cors-headers
+      tls:
+        certResolver: letsencrypt
+
+    # Kibana - HTTP to HTTPS redirect (excluding ACME challenges)
+    kibana-http-to-https:
+      rule: "Host(`kibana.ploscope.com`) && !PathPrefix(`/.well-known/acme-challenge/`)"
+      priority: 1000
+      service: noop@internal
+      entrypoints:
+        - web
+      middlewares:
+        - redirect-to-https
+
+    # Kibana - HTTP for ACME challenges
+    kibana-http:
+      rule: "Host(`kibana.ploscope.com`) && PathPrefix(`/.well-known/acme-challenge/`)"
+      service: acme-challenge
+      entrypoints:
+        - web
+      priority: 1001
+      middlewares:
+        - cors-headers
+
+    kibana-vpn:
+      rule: "Host(`kibana.ploscope.com`)"
+      service: kibana
+      entrypoints:
+        - websecure
+      middlewares:
+        - vpn-debug
+        - vpn-only
+      tls:
+        certResolver: letsencrypt
+
+    # Portainer - HTTP to HTTPS redirect (excluding ACME challenges)
+    portainer-http-to-https:
+      rule: "Host(`portainer.ploscope.com`) && !PathPrefix(`/.well-known/acme-challenge/`)"
+      priority: 1000
+      service: noop@internal
+      entrypoints:
+        - web
+      middlewares:
+        - redirect-to-https
+
+    # Portainer - HTTP for ACME challenges
+    portainer-http:
+      rule: "Host(`portainer.ploscope.com`) && PathPrefix(`/.well-known/acme-challenge/`)"
+      service: acme-challenge
+      entrypoints:
+        - web
+      priority: 1001
+      middlewares:
+        - cors-headers
+
+    portainer-vpn:
+      rule: "Host(`portainer.ploscope.com`)"
+      service: portainer
+      entrypoints:
+        - websecure
+      middlewares:
+        - vpn-debug
+        - vpn-only
+      tls:
+        certResolver: letsencrypt
+
+    # ACME challenge handler for Let's Encrypt
+    acme-challenge:
+      rule: "PathPrefix(`/.well-known/acme-challenge/`)"
+      service: acme-challenge
+      entrypoints:
+        - web
+      priority: 1000
+      middlewares:
+        - cors-headers
+
+    # RabbitMQ management interface - HTTP to HTTPS redirect (excluding ACME challenges)
+    rabbitmq-http-to-https:
+      rule: "Host(`rabbitmq.ploscope.com`) && !PathPrefix(`/.well-known/acme-challenge/`)"
+      priority: 1000
+      service: noop@internal
+      entrypoints:
+        - web
+      middlewares:
+        - redirect-to-https
+
+    # RabbitMQ management interface - HTTP for ACME challenges
+    rabbitmq-http:
+      rule: "Host(`rabbitmq.ploscope.com`) && PathPrefix(`/.well-known/acme-challenge/`)"
+      service: acme-challenge
+      entrypoints:
+        - web
+      priority: 1001
+      middlewares:
+        - cors-headers
+
+    rabbitmq-vpn:
+      rule: "Host(`rabbitmq.ploscope.com`)"
+      service: rabbitmq
+      entrypoints:
+        - websecure
+      middlewares:
+        - vpn-debug
+        - vpn-only
+      tls:
+        certResolver: letsencrypt
+
+    traefik-vpn:
+      rule: "Host(`traefik.ploscope.com`)"
+      service: api@internal
+      middlewares:
+        - vpn-only
+      entrypoints:
+        - web
+        - websecure
+      tls:
+        certResolver: letsencrypt
+    
+    # OpenVPN Access Server - HTTP to HTTPS redirect (excluding ACME challenges)
+    openvpn-http-to-https:
+      rule: "Host(`vpn.ploscope.com`) && !PathPrefix(`/.well-known/acme-challenge/`)"
+      priority: 1000
+      service: noop@internal
+      entrypoints:
+        - web
+      middlewares:
+        - redirect-to-https
+
+    # OpenVPN Access Server - HTTP for ACME challenges
+    openvpn-http:
+      rule: "Host(`vpn.ploscope.com`) && PathPrefix(`/.well-known/acme-challenge/`)"
+      service: acme-challenge
+      entrypoints:
+        - web
+      priority: 1001
+      middlewares:
+        - cors-headers
+
+    # OpenVPN Access Server - HTTPS
+    openvpn-https:
+      rule: "Host(`vpn.ploscope.com`)"
+      service: openvpn
+      entrypoints:
+        - websecure
+      middlewares:
+        - cors-headers
+        - vpn-only
+      tls:
+        certResolver: letsencrypt
+
+    # Vault - HTTP to HTTPS redirect (excluding ACME challenges)
+    vault-http-to-https:
+      rule: "Host(`vault.ploscope.com`) && !PathPrefix(`/.well-known/acme-challenge/`)"
+      priority: 1000
+      service: noop@internal
+      entrypoints:
+        - web
+      middlewares:
+        - redirect-to-https
+
+    # Vault - HTTP for ACME challenges
+    vault-http:
+      rule: "Host(`vault.ploscope.com`) && PathPrefix(`/.well-known/acme-challenge/`)"
+      service: acme-challenge
+      entrypoints:
+        - web
+      priority: 1001
+      middlewares:
+        - cors-headers
+
+    # Vault - HTTPS
+    vault-https:
+      rule: "Host(`vault.ploscope.com`)"
+      service: vault
+      entrypoints:
+        - websecure
+      middlewares:
+        - cors-headers
+        - vpn-only
+        - vault-access-control
+        - vault-readonly
+      tls:
+        certResolver: letsencrypt
+
+    # Monitoring services routers
+    prometheus-monitoring:
+      rule: "Host(`prometheus-prod.ploscope.com`)"
+      service: prometheus-monitoring
+      entrypoints:
+        - websecure
+      middlewares:
+        - prometheus-auth
+        - cors-headers
+      tls:
+        certResolver: letsencrypt
+
+    grafana-monitoring:
+      rule: "Host(`grafana-prod.ploscope.com`)"
+      service: grafana-monitoring
+      entrypoints:
+        - websecure
+      middlewares:
+        - cors-headers
+      tls:
+        certResolver: letsencrypt
+
+    cadvisor-monitoring:
+      rule: "Host(`cadvisor.grafana-prod.ploscope.com`)"
+      service: cadvisor-monitoring
+      entrypoints:
+        - websecure
+      middlewares:
+        - cors-headers
+      tls:
+        certResolver: letsencrypt
+
+    node-exporter-monitoring:
+      rule: "Host(`node-exporter.grafana-prod.ploscope.com`)"
+      service: node-exporter-monitoring
+      entrypoints:
+        - websecure
+      middlewares:
+        - cors-headers
+      tls:
+        certResolver: letsencrypt
+
+    loki-monitoring:
+      rule: "Host(`loki.grafana-prod.ploscope.com`)"
+      service: loki-monitoring
+      entrypoints:
+        - websecure
+      middlewares:
+        - loki-auth
+        - cors-headers
+      tls:
+        certResolver: letsencrypt
+
+  services:
+    openvpn:
+      loadBalancer:
+        servers:
+          - url: "https://openvpn:443"
+        serversTransport: openvpn-transport
+    frontend:
+      loadBalancer:
+        servers:
+          - url: "http://frontend:3000"
+    
+    backend:
+      loadBalancer:
+        servers:
+          - url: "http://backend:5001"
+        passHostHeader: true
+        responseForwarding:
+          flushInterval: "100ms"
+        # Enable WebSocket support and sticky sessions
+        sticky:
+          cookie:
+            name: "backend-sticky"
+    kibana:
+      loadBalancer:
+        servers:
+          - url: "http://kibana:5601"
+    portainer:
+      loadBalancer:
+        servers:
+          - url: "http://portainer:9000"
+    rabbitmq:
+      loadBalancer:
+        servers:
+          - url: "http://rabbitmq:15672"
+    
+    vault:
+      loadBalancer:
+        servers:
+          - url: "http://plo-solver-vault:8200"
+    
+    # ACME challenge service for Let's Encrypt
+    acme-challenge:
+      loadBalancer:
+        servers:
+          - url: "http://frontend:3000"
+    
+    # Monitoring services
+    prometheus-monitoring:
+      loadBalancer:
+        servers:
+          - url: "http://prometheus-production:9090"
+
+    grafana-monitoring:
+      loadBalancer:
+        servers:
+          - url: "http://grafana-production:3000"
+
+    cadvisor-monitoring:
+      loadBalancer:
+        servers:
+          - url: "http://cadvisor-production:8080"
+
+    node-exporter-monitoring:
+      loadBalancer:
+        servers:
+          - url: "http://node-exporter-production:9100"
+
+    loki-monitoring:
+      loadBalancer:
+        servers:
+          - url: "http://loki-production:3100"
+
+  serversTransports:
+    openvpn-transport:
+      insecureSkipVerify: true
+
+  middlewares:
+    redirect-to-https:
+      redirectScheme:
+        scheme: https
+        permanent: true
+    
+    cors-headers:
+      headers:
+        accessControlAllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - PATCH
+          - OPTIONS
+        accessControlAllowHeaders:
+          - "*"
+        accessControlAllowOriginList:
+          - "*"
+        accessControlMaxAge: 100
+        addVaryHeader: true
+    
+    # WebSocket upgrade middleware for entrypoint
+    websocket-upgrade:
+      headers:
+        accessControlAllowMethods:
+          - GET
+          - POST
+          - OPTIONS
+        accessControlAllowHeaders:
+          - "*"
+        accessControlAllowOriginList:
+          - "*"
+        accessControlMaxAge: 100
+        addVaryHeader: true
+        # Forward WebSocket upgrade headers
+        customRequestHeaders:
+          Upgrade: "websocket"
+          Connection: "upgrade"
+        # Allow WebSocket upgrade responses
+        customResponseHeaders:
+          Upgrade: "websocket"
+          Connection: "upgrade"
+    
+    # WebSocket-specific middleware
+    websocket-headers:
+      headers:
+        accessControlAllowMethods:
+          - GET
+          - POST
+          - OPTIONS
+        accessControlAllowHeaders:
+          - "*"
+        accessControlAllowOriginList:
+          - "*"
+        accessControlMaxAge: 100
+        addVaryHeader: true
+        # Allow WebSocket upgrade headers
+        customRequestHeaders:
+          Upgrade: "websocket"
+          Connection: "upgrade"
+        # Allow WebSocket upgrade responses
+        customResponseHeaders:
+          Upgrade: "websocket"
+          Connection: "upgrade"
+    
+    vpn-only:
+      ipAllowList:
+        sourceRange:
+          - "38.58.113.120/16"       # Lucas
+          - "73.153.176.84/16"       # Stephen
+          - "172.18.0.0/16"       # Docker network (used by VPN gateway too)
+          - "172.27.224.0/20"     # VPN clients
+          - "172.27.0.0/16"       # VPN clients
+          - "172.18.1.17/32"      # OpenVPN container's static IP
+          - "172.18.0.1/32"       # NAT IP Address
+          - "172.18.0.5/32"       # Your OpenVPN container's Docker IP
+    
+    vpn-debug:
+      headers:
+        customResponseHeaders:
+          X-Debug-Info: "VPN-Debug-Enabled"
+          X-Real-IP: "{remoteip}"
+    
+    # Restrict Vault access to specific containers only
+    vault-access-control:
+      headers:
+        customRequestHeaders:
+          X-Vault-Request: "true"
+        customResponseHeaders:
+          X-Vault-Access: "restricted"
+    
+    # Enforce read-only operations for containers
+    vault-readonly:
+      headers:
+        customRequestHeaders:
+          X-Vault-ReadOnly: "true"
+        customResponseHeaders:
+          X-Vault-Operation: "read-only"
+    
+    # Basic authentication for Prometheus
+    prometheus-auth:
+      basicAuth:
+        users:
+          - "prometheususer:$apr1$8K8v9rX2$5Y7v8w9x0y1z2a3b4c5d6e"
+    
+    # Basic authentication for Loki
+    loki-auth:
+      basicAuth:
+        users:
+          - "lokiuser:$apr1$9L9w0sY3$6Z8x9y0z1a2b3c4d5e6f7g"
+
+tcp:
+  routers:
+    openvpn-tcp:
+      rule: "HostSNI(`vpn.ploscope.com`)"
+      service: openvpn-tcp
+      entrypoints:
+        - openvpn-tcp
+      tls:
+        certResolver: letsencrypt
+  
+  services:   
+    openvpn-tcp:
+      loadBalancer:
+        servers:
+          - address: "172.18.1.17:1194" 

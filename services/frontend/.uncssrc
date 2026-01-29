@@ -1,0 +1,21 @@
+{
+  "ignore": [
+    ".active",
+    ".open",
+    ".show",
+    ".hidden",
+    "/^\\.is-/",
+    "/^\\.has-/",
+    "/^\\.modal/",
+    "/^\\.collapse/",
+    "/^\\.collaps/",
+    "/^\\[data-.*\\]/",
+    "/^\\.(enter|leave|appear)(-active)?$/",
+    ":root",
+    "/^@keyframes/"
+  ],
+  "media": ["all", "screen"],
+  "strictSSL": true,
+  "timeout": 2000,
+  "report": true
+}

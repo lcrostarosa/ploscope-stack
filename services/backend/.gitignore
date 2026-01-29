@@ -1,0 +1,347 @@
+# =============================================================================
+# Python Backend .gitignore
+# =============================================================================
+
+# =============================================================================
+# Python
+# =============================================================================
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+.pybuilder/
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# poetry
+poetry.lock
+
+# pdm
+.pdm.toml
+
+# PEP 582
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# =============================================================================
+# Environment and Configuration Files
+# =============================================================================
+
+# Environment files with secrets (never commit these)
+*.env
+*.env.local
+*.env.production
+*.env.staging
+env.staging
+env.yaml
+env.production
+env.staging-local
+env.staging-local.*
+
+# Configuration files with sensitive data
+config.ini
+config.yaml
+config.yml
+settings.ini
+settings.yaml
+settings.yml
+
+# =============================================================================
+# Database Files
+# =============================================================================
+
+# SQLite databases
+*.db
+*.sqlite
+*.sqlite3
+
+# PostgreSQL data directories
+data/postgres/
+data/rabbitMQ/
+
+# Database dumps
+*.dump
+*.sql
+
+# =============================================================================
+# Logs and Debugging
+# =============================================================================
+
+# Log files
+logs/
+logs/*
+*.log
+*.log.*
+
+# Debug files
+*.debug
+debug.log
+
+# =============================================================================
+# SSL and Security Certificates
+# =============================================================================
+
+# SSL certificates and keys
+ssl/
+*.crt
+*.key
+*.srl
+*.pem
+*.csr
+*.p12
+*.pfx
+
+# =============================================================================
+# IDE and Editor Files
+# =============================================================================
+
+# PyCharm
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# =============================================================================
+# OS Generated Files
+# =============================================================================
+
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# =============================================================================
+# Testing and Reports
+# =============================================================================
+
+# Test results and reports
+test-results/
+test-results/*
+reports/
+reports/*
+newman-results.json
+
+
+# =============================================================================
+# Build and Deployment
+# =============================================================================
+
+# Build artifacts
+*.production
+*.backup
+build/
+dist/
+
+# Docker
+.dockerignore
+Dockerfile.dev
+docker-compose.override.yml
+
+# Kubernetes
+*.kubeconfig
+
+# CI/CD
+actions-runner/
+.github/workflows/.env
+
+# =============================================================================
+# Frontend (if any frontend files exist in backend)
+# =============================================================================
+
+# Node.js
+node_modules/
+node_modules/*
+src/frontend/node_modules
+src/frontend/dist/
+
+# =============================================================================
+# Temporary and Cache Files
+# =============================================================================
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+*.old
+*.orig
+
+# Cache directories
+.cache/
+cache/
+*.cache
+
+# =============================================================================
+# Project Specific
+# =============================================================================
+
+# Custom project ignores
+foobar
+solver_cache/
+instance/

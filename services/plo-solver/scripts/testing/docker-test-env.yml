@@ -1,0 +1,100 @@
+version: '3.8'
+
+services:
+  # Ubuntu test environment
+  test-ubuntu:
+    image: ubuntu:22.04
+    container_name: plosolver-test-env
+    hostname: plosolver-test
+    environment:
+      - DEBIAN_FRONTEND=noninteractive
+      - TZ=UTC
+    volumes:
+      - .:/workspace:ro
+      - test-data:/opt/plosolver
+      - /var/run/docker.sock:/var/run/docker.sock
+    working_dir: /workspace
+    command: >
+      bash -c "
+        # Update system
+        apt-get update && apt-get upgrade -y &&
+        
+        # Install essential packages
+        apt-get install -y curl wget git vim htop unzip software-properties-common apt-transport-https ca-certificates gnupg lsb-release &&
+        
+        # Install Docker
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg &&
+        echo 'deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable' | tee /etc/apt/sources.list.d/docker.list > /dev/null &&
+        apt-get update &&
+        apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin &&
+        
+        # Install Node.js 18.x
+        curl -fsSL https://deb.nodesource.com/setup_18.x | bash - &&
+        apt-get install -y nodejs &&
+        
+        # Install Python 3.11
+        apt-get install -y python3.11 python3.11-venv python3.11-dev python3-pip &&
+        
+        # Install PostgreSQL client
+        apt-get install -y postgresql-client &&
+        
+        # Set up environment
+        echo 'export PATH=$PATH:/usr/local/bin' >> /root/.bashrc &&
+        echo 'export PLOSOLVER_HOME=/opt/plosolver' >> /root/.bashrc &&
+        
+        # Create test script
+        cat > /opt/plosolver/test-setup.sh << 'EOF'
+#!/bin/bash
+echo '=== PLOSolver Test Environment Setup ==='
+echo 'Docker version:'
+docker --version
+echo 'Node.js version:'
+node --version
+echo 'Python version:'
+python3.11 --version
+echo 'Git version:'
+git --version
+echo '=== Setup Complete ==='
+EOF
+        chmod +x /opt/plosolver/test-setup.sh &&
+        
+        # Start Docker service
+        service docker start &&
+        
+        echo 'PLOSolver test environment ready!' &&
+        echo 'Run: docker exec -it plosolver-test-env bash' &&
+        
+        # Keep container running
+        tail -f /dev/null
+      "
+    privileged: true
+    network_mode: host
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+
+  # Optional: PostgreSQL for testing
+  test-postgres:
+    image: postgres:15
+    container_name: plosolver-test-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: plosolver_test
+    ports:
+      - "5433:5432"  # Different port to avoid conflicts
+    volumes:
+      - test-postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  # Optional: Redis for testing
+  test-redis:
+    image: redis:7-alpine
+    container_name: plosolver-test-redis
+    ports:
+      - "6380:6379"  # Different port to avoid conflicts
+    restart: unless-stopped
+
+volumes:
+  test-data:
+  test-postgres-data: 

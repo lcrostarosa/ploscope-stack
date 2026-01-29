@@ -1,0 +1,35 @@
+// =============================================================================
+// Footer Styles
+// =============================================================================
+
+@use '../../styles/Variables' as *;
+
+
+.footer-left p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.footer-right {
+  display: flex;
+  gap: 2rem;
+}
+
+.footer-link {
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 0.9rem;
+  transition: color 0.2s ease;
+}
+
+.footer-link:hover {
+  color: var(--text-primary);
+}
+
+@media (max-width: 768px) {
+
+  .footer-right {
+    gap: 1.5rem;
+  }
+}

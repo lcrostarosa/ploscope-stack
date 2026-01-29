@@ -1,0 +1,19 @@
+@use '../../../styles/Variables' as *;
+
+.empty-state-banner {
+  margin: 12px 0;
+  padding: 10px 14px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  text-align: center;
+
+  /* Mobile: More compact banner */
+  @media (max-width: 768px) {
+    margin: 8px 0;
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 0.9rem;
+  }
+}

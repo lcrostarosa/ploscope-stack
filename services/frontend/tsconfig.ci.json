@@ -1,0 +1,29 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    "**/*.js",
+    "**/*.jsx",
+    "global.d.ts",
+    "types/**/*.d.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "build",
+    "dist",
+    "coverage",
+    "components/examples/**",
+    "components/jobs/**",
+    "components/game/GameLogic.tsx",
+    "components/layout/AppHeader.tsx",
+    "components/layout/gameState.tsx",
+    "pages/SpotMode.tsx",
+    "pages/HandHistoryAnalyzer.tsx",
+    "utils/gameStateUtils.ts",
+    "hooks/useAnalytics.ts",
+  ]
+}

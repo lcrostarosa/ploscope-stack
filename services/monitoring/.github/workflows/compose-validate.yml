@@ -1,0 +1,49 @@
+name: Compose Validate
+
+on:
+  pull_request:
+    branches: ["**"]
+  push:
+    branches: [ main ]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Install docker compose v2
+        run: |
+          sudo mkdir -p /usr/local/lib/docker/cli-plugins
+          sudo curl -sSL https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-linux-x86_64 -o /usr/local/lib/docker/cli-plugins/docker-compose
+          sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+          docker compose version
+
+      - name: Create required external networks (no-fail)
+        run: |
+          docker network create plo-network || true
+          docker network create plo-network-staging || true
+          docker network create plo-network-production || true
+          docker network create plosolver-test-network || true
+
+      - name: Lint and config-check compose files
+        run: |
+          set -euxo pipefail
+          for f in docker-compose*.yml; do
+            echo "Validating $f"
+            docker compose -f "$f" config -q
+          done
+
+      - name: Pull images for each compose file
+        run: |
+          set -euxo pipefail
+          for f in docker-compose*.yml; do
+            echo "Pulling images for $f"
+            docker compose -f "$f" pull --ignore-pull-failures || true
+          done

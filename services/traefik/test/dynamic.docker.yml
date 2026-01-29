@@ -1,0 +1,65 @@
+# Test Environment Dynamic Configuration
+# This file contains routing rules and service definitions for testing
+
+http:
+  routers:
+    # HTTP to HTTPS redirect for localhost and traefik
+    # http-to-https:
+    #   rule: "Host(`localhost`) || Host(`traefik`)"
+    #   priority: 1000
+    #   service: noop@internal
+    #   entrypoints:
+    #     - web
+    #   middlewares:
+    #     - redirect-to-https
+    
+    # Test backend API routes - HTTP
+    test-backend-api:
+      rule: "PathPrefix(`/api`)"
+      service: test-backend
+      entrypoints:
+        - web
+      priority: 10
+      middlewares:
+        - cors-headers
+    
+    # Test frontend routes - HTTPS
+    test-frontend:
+      rule: "Host(`localhost`) || Host(`traefik`)"
+      service: test-frontend
+      entrypoints:
+        - websecure
+      priority: 1
+      middlewares:
+        - cors-headers
+
+  services:
+    test-backend:
+      loadBalancer:
+        servers:
+          - url: "http://backend:5001"
+        passHostHeader: true
+        responseForwarding:
+          flushInterval: "100ms"
+    
+    test-frontend:
+      loadBalancer:
+        servers:
+          - url: "http://frontend:3000"
+
+  middlewares:
+    cors-headers:
+      headers:
+        accessControlAllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - PATCH
+          - OPTIONS
+        accessControlAllowHeaders:
+          - "*"
+        accessControlAllowOriginList:
+          - "*"
+        accessControlMaxAge: 100
+        addVaryHeader: true 

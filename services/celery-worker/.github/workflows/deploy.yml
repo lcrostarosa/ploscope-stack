@@ -1,0 +1,203 @@
+---
+  # It is triggered by a release being published to the GitHub repository.
+  # The workflow will deploy the celery migrations to the production server.
+  # The workflow will also deploy the celery migrations to the staging server.
+  # The workflow will also deploy the celery migrations to the development server.
+  # The workflow will also deploy the celery migrations to the local development server.
+  # The workflow will also deploy the celery migrations to the local development server.
+  name: Deploy celeryworker
+
+  on:
+    workflow_dispatch:
+      inputs:
+        tag:
+          description: Docker image tag (e.g., v1.2.3)
+          required: true
+          default: staging
+        environment:
+          description: Environment to deploy to (e.g., staging, production)
+          required: true
+          default: staging
+          type: choice
+          options:
+            - staging
+            - production
+
+    release:
+      types: [published]
+
+  jobs:
+    deploy:
+      runs-on: ${{ vars.GHA_RUNNER }}
+      environment: ${{ github.event.inputs.environment }}
+      steps:
+        - name: Resolve inputs
+          id: vars
+          run: |
+            echo "TAG=${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}" >> $GITHUB_OUTPUT
+            echo "HOST=${{ secrets.SSH_HOST }}" >> $GITHUB_OUTPUT
+            echo "USER=${{ secrets.SSH_USER }}" >> $GITHUB_OUTPUT
+
+        - name: Validate production deployment source
+          if: inputs.environment == 'production'
+          run: |
+            # Only allow production deploys from master branch and production tags (v*.*.*)
+            if [[ "${GITHUB_REF}" != "refs/heads/master" && "${GITHUB_REF}" != refs/tags/v* ]]; then
+              echo "Production deployment is only allowed from the master branch or production tags (v*.*.*)."
+              exit 1
+            fi
+
+        - name: Deploy to server
+          uses: appleboy/ssh-action@v1.0.3
+          with:
+            host: ${{ secrets.SSH_HOST }}
+            username: ${{ secrets.SSH_USER }}
+            key: ${{ secrets.SSH_PRIVATE_KEY }}
+            port: 22
+            timeout: 300s
+            allenvs: true
+            script: |
+              set -e
+
+              export APP_NAME="celery-worker"
+              export ENVIRONMENT="${{ inputs.environment }}"
+
+              export REF_NAME="${{ github.ref_name }}"
+              export REF_TYPE="${{ github.ref_type }}"
+
+              # Strip newlines and whitespace from all environment variables
+              # This handles cases where GitHub Actions secrets/vars have trailing newlines
+              export DATABASE_URL=$(echo "${{ secrets.DATABASE_URL }}" | tr -d '\r\n' | xargs)
+              export APP_PATH=$(echo "${{ secrets.APP_PATH }}" | tr -d '\r\n' | xargs)
+              export CELERY_BROKER_URL=$(echo "${{ secrets.CELERY_BROKER_URL }}" | tr -d '\r\n' | xargs)
+              export CELERY_RESULT_BACKEND=$(echo "${{ secrets.CELERY_RESULT_BACKEND }}" | tr -d '\r\n' | xargs)
+              export SECRET_KEY=$(echo "${{ secrets.SECRET_KEY }}" | tr -d '\r\n' | xargs)
+
+              export CELERY_ENABLE_UTC=$(echo "${{ vars.CELERY_ENABLE_UTC }}" | tr -d '\r\n' | xargs)
+              export CELERY_HEALTH_PORT=$(echo "${{ vars.CELERY_HEALTH_PORT }}" | tr -d '\r\n' | xargs)
+
+              export CELERY_RESULT_SERIALIZER=$(echo "${{ vars.CELERY_RESULT_SERIALIZER }}" | tr -d '\r\n' | xargs)
+              export CELERY_TASK_SERIALIZER=$(echo "${{ vars.CELERY_TASK_SERIALIZER }}" | tr -d '\r\n' | xargs)
+              export CELERY_TASK_SOFT_TIME_LIMIT=$(echo "${{ vars.CELERY_TASK_SOFT_TIME_LIMIT }}" | tr -d '\r\n' | xargs)
+              export CELERY_TASK_TIME_LIMIT=$(echo "${{ vars.CELERY_TASK_TIME_LIMIT }}" | tr -d '\r\n' | xargs)
+              export CELERY_TASK_TRACK_STARTED=$(echo "${{ vars.CELERY_TASK_TRACK_STARTED }}" | tr -d '\r\n' | xargs)
+
+              export CELERY_WORKER_CONCURRENCY=$(echo "${{ vars.CELERY_WORKER_CONCURRENCY }}" | tr -d '\r\n' | xargs)
+              export CELERY_WORKER_MAX_TASKS_PER_CHILD=$(echo "${{ vars.CELERY_WORKER_MAX_TASKS_PER_CHILD }}" | tr -d '\r\n' | xargs)
+
+              export POSTGRES_HOST=$(echo "${{ vars.POSTGRES_HOST }}" | tr -d '\r\n' | xargs)
+              export POSTGRES_PORT=$(echo "${{ vars.POSTGRES_PORT }}" | tr -d '\r\n' | xargs)
+              export POSTGRES_USER=$(echo "${{ vars.POSTGRES_USER }}" | tr -d '\r\n' | xargs)
+              export POSTGRES_PASSWORD=$(echo "${{ secrets.POSTGRES_PASSWORD }}" | tr -d '\r\n' | xargs)
+              export POSTGRES_DB=$(echo "${{ vars.POSTGRES_DB }}" | tr -d '\r\n' | xargs)
+
+              export PIP_INDEX_URL="https://nexus.ploscope.com/repository/pypi-internal/simple/"
+              export PIP_TRUSTED_HOST=$(echo "${{ secrets.PIP_TRUSTED_HOST }}" | tr -d '\r\n' | xargs)
+              export NEXUS_USERNAME="pypi-publisher"
+              export NEXUS_PYPI_USERNAME="pypi-publisher"
+              export NEXUS_PYPI_PASSWORD=$(echo "${{ secrets.NEXUS_PYPI_PASSWORD }}" | tr -d '\r\n' | xargs)
+
+              export RABBITMQ_USERNAME=$(echo "${{ vars.RABBITMQ_USERNAME }}" | tr -d '\r\n' | xargs)
+              export RABBITMQ_PASSWORD=$(echo "${{ secrets.RABBITMQ_PASSWORD }}" | tr -d '\r\n' | xargs)
+              export RABBITMQ_HOST=$(echo "${{ vars.RABBITMQ_HOST }}" | tr -d '\r\n' | xargs)
+              export RABBITMQ_PORT=$(echo "${{ vars.RABBITMQ_PORT }}" | tr -d '\r\n' | xargs)
+              export RABBITMQ_VHOST=$(echo "${{ vars.RABBITMQ_VHOST }}" | tr -d '\r\n' | xargs)
+              export RABBITMQ_SPOT_QUEUE=$(echo "${{ vars.RABBITMQ_SPOT_QUEUE }}" | tr -d '\r\n' | xargs)
+              export RABBITMQ_SOLVER_QUEUE=$(echo "${{ vars.RABBITMQ_SOLVER_QUEUE }}" | tr -d '\r\n' | xargs)
+              export RABBITMQ_SPOT_DLQ=$(echo "${{ vars.RABBITMQ_SPOT_DLQ }}" | tr -d '\r\n' | xargs)
+              export RABBITMQ_SOLVER_DLQ=$(echo "${{ vars.RABBITMQ_SOLVER_DLQ }}" | tr -d '\r\n' | xargs)
+
+              export REDIS_PASSWORD=$(echo "${{ secrets.REDIS_PASSWORD }}" | tr -d '\r\n' | xargs)
+              export REDIS_HOST=$(echo "${{ vars.REDIS_HOST }}" | tr -d '\r\n' | xargs)
+              export REDIS_PORT=$(echo "${{ vars.REDIS_PORT }}" | tr -d '\r\n' | xargs)
+              export REDIS_DB=$(echo "${{ vars.REDIS_DB }}" | tr -d '\r\n' | xargs)
+              export REDIS_URL=$(echo "${{ secrets.REDIS_URL }}" | tr -d '\r\n' | xargs)
+
+              export IMAGE_TAG="${{ steps.vars.outputs.TAG }}"
+
+              mkdir -p ~/ploscope
+
+              # Check if the Docker network 'plo-network-cloud' exists, create if not
+              if ! docker network inspect plo-network-cloud >/dev/null 2>&1; then
+                echo "🔗 Creating Docker network plo-network-cloud with subnet 172.30.1.0/24..."
+                docker network create --subnet=172.30.1.0/24 plo-network-cloud
+              else
+                echo "🔗 Docker network plo-network-cloud already exists."
+              fi
+
+              if [ ! -d "$HOME/ploscope/$APP_NAME/.git" ]; then
+                echo "📥 Repository doesn't exist, cloning..."
+                cd ~/ploscope
+                git clone git@github.com:ploscope/$APP_NAME.git
+                cd $APP_NAME
+                git fetch --prune --tags origin
+                if [ "$REF_TYPE" = "tag" ]; then
+                  git checkout -f "tags/$REF_NAME"
+                else
+                  git checkout -B "$REF_NAME" "origin/$REF_NAME"
+                fi
+              else
+                echo "📂 Repository exists, pulling latest changes..."
+                cd ~/ploscope/$APP_NAME
+                git fetch --prune --tags origin
+                if [ "$REF_TYPE" = "tag" ]; then
+                  git checkout -f "tags/$REF_NAME"
+                else
+                  git checkout -B "$REF_NAME" "origin/$REF_NAME"
+                fi
+              fi
+
+              echo "🔧 Starting Docker Compose..."
+              docker login -u ${{ secrets.DOCKERHUB_USERNAME }} -p ${{ secrets.DOCKERHUB_TOKEN }} docker.io
+              IMAGE_TAG="${{ steps.vars.outputs.TAG }}" docker compose -f docker-compose.cloud.yml pull
+              IMAGE_TAG="${{ steps.vars.outputs.TAG }}" docker compose -f docker-compose.cloud.yml up -d
+
+              # Wait for the celery container to become healthy before exiting
+              echo "⏳ Waiting for celery container to become healthy..."
+
+              for i in {1..30}; do
+                STATUS=$(docker inspect --format='{{.State.Health.Status}}' celeryworker-${{ inputs.environment }} 2>/dev/null || echo "notfound")
+                if [ "$STATUS" = "healthy" ]; then
+                  echo "✅ celery container is healthy."
+                  echo "📋 Health check logs:"
+                  docker inspect --format='{{range .State.Health.Log}}{{.Output}}{{end}}' celeryworker-${{ inputs.environment }} || echo "Could not retrieve health logs"
+                  break
+                elif [ "$STATUS" = "unhealthy" ]; then
+                  echo "❌ celery container is unhealthy."
+                  echo "📋 Container logs:"
+                  docker logs celeryworker-${{ inputs.environment }} --tail 50 || echo "Could not retrieve logs"
+                  echo "📋 Health check logs:"
+                  docker inspect --format='{{range .State.Health.Log}}{{.Output}}{{end}}' celeryworker-${{ inputs.environment }} || echo "Could not retrieve health logs"
+                  echo "📋 Health check details:"
+                  docker inspect --format='{{json .State.Health}}' celeryworker-${{ inputs.environment }} | jq '.' || echo "Could not retrieve health details"
+                  exit 1
+                elif [ "$STATUS" = "notfound" ]; then
+                  echo "❌ celery container is not found."
+                  echo "📋 Available containers:"
+                  docker ps -a || echo "Could not list containers"
+                  exit 1
+                else
+                  echo "⏳ Waiting for health status... (current: $STATUS)"
+                  # Show health check logs even while starting
+                  if [ "$STATUS" != "starting" ]; then
+                    echo "📋 Recent health check logs:"
+                    docker inspect --format='{{range .State.Health.Log}}{{.Output}}{{end}}' celeryworker-${{ inputs.environment }} 2>/dev/null || echo "No health logs available yet"
+                  fi
+                fi
+
+                sleep 1
+                if [ $i -eq 30 ]; then
+                  echo "❌ Timeout waiting for celery container to become healthy."
+                  echo "📋 Container logs:"
+                  docker logs celeryworker-${{ inputs.environment }} --tail 50 || echo "Could not retrieve logs"
+                  echo "📋 Health check logs:"
+                  docker inspect --format='{{range .State.Health.Log}}{{.Output}}{{end}}' celeryworker-${{ inputs.environment }} || echo "Could not retrieve health logs"
+                  echo "📋 Health check details:"
+                  docker inspect --format='{{json .State.Health}}' celeryworker-${{ inputs.environment }} | jq '.' || echo "Could not retrieve health details"
+                  echo "📋 Manual health check test:"
+                  docker exec celeryworker-${{ inputs.environment }} python /app/health_check.py || echo "Could not run manual health check"
+                  exit 1
+                fi
+              done
+
+              echo "🎉 Deployment completed successfully!"

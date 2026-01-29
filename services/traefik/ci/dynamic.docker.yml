@@ -1,0 +1,154 @@
+# CI Environment Dynamic Configuration
+# This file contains routing rules and service definitions for CI testing
+
+http:
+  routers:
+    # Backend API routes for CI testing
+    ci-backend-api:
+      rule: "PathPrefix(`/api`)"
+      service: ci-backend
+      entrypoints:
+        - web
+      priority: 100
+      middlewares:
+        - cors-headers
+    
+    # Frontend routes for CI testing
+    ci-frontend:
+      rule: "Host(`localhost`)"
+      service: ci-frontend
+      entrypoints:
+        - web
+      priority: 1
+      middlewares:
+        - cors-headers
+
+    # WebSocket routes for CI testing
+    ci-websocket:
+      rule: "PathPrefix(`/socket.io`)"
+      priority: 10
+      service: ci-backend
+      entrypoints:
+        - web
+      middlewares:
+        - websocket-headers
+
+    # Monitoring services routers
+    prometheus-monitoring:
+      rule: "Host(`localhost`) && PathPrefix(`/prometheus`)"
+      service: prometheus-monitoring
+      entrypoints:
+        - web
+      middlewares:
+        - cors-headers
+
+    grafana-monitoring:
+      rule: "Host(`localhost`) && PathPrefix(`/grafana`)"
+      service: grafana-monitoring
+      entrypoints:
+        - web
+      middlewares:
+        - cors-headers
+
+    cadvisor-monitoring:
+      rule: "Host(`localhost`) && PathPrefix(`/cadvisor`)"
+      service: cadvisor-monitoring
+      entrypoints:
+        - web
+      middlewares:
+        - cors-headers
+
+    node-exporter-monitoring:
+      rule: "Host(`localhost`) && PathPrefix(`/node-exporter`)"
+      service: node-exporter-monitoring
+      entrypoints:
+        - web
+      middlewares:
+        - cors-headers
+
+    loki-monitoring:
+      rule: "Host(`localhost`) && PathPrefix(`/loki`)"
+      service: loki-monitoring
+      entrypoints:
+        - web
+      middlewares:
+        - cors-headers
+
+  services:
+    ci-backend:
+      loadBalancer:
+        servers:
+          - url: "http://localhost:5001"
+        passHostHeader: true
+        responseForwarding:
+          flushInterval: "100ms"
+    
+    ci-frontend:
+      loadBalancer:
+        servers:
+          - url: "http://localhost:3001"
+    
+    # Monitoring services
+    prometheus-monitoring:
+      loadBalancer:
+        servers:
+          - url: "http://prometheus-${ENVIRONMENT}:9090"
+
+    grafana-monitoring:
+      loadBalancer:
+        servers:
+          - url: "http://grafana-${ENVIRONMENT}:3000"
+
+    cadvisor-monitoring:
+      loadBalancer:
+        servers:
+          - url: "http://cadvisor-${ENVIRONMENT}:8080"
+
+    node-exporter-monitoring:
+      loadBalancer:
+        servers:
+          - url: "http://node-exporter-${ENVIRONMENT}:9100"
+
+    loki-monitoring:
+      loadBalancer:
+        servers:
+          - url: "http://loki-${ENVIRONMENT}:3100"
+
+  middlewares:
+    cors-headers:
+      headers:
+        accessControlAllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - PATCH
+          - OPTIONS
+        accessControlAllowHeaders:
+          - "*"
+        accessControlAllowOriginList:
+          - "*"
+        accessControlMaxAge: 100
+        addVaryHeader: true
+    
+    websocket-headers:
+      headers:
+        accessControlAllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - PATCH
+          - OPTIONS
+        accessControlAllowHeaders:
+          - "*"
+        accessControlAllowOriginList:
+          - "*"
+        accessControlMaxAge: 100
+        addVaryHeader: true
+        customRequestHeaders:
+          Upgrade: "websocket"
+          Connection: "upgrade"
+        customResponseHeaders:
+          Upgrade: "websocket"
+          Connection: "upgrade" 

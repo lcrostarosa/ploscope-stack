@@ -1,0 +1,436 @@
+# Main Traefik configuration
+entryPoints:
+  web:
+    address: ":80"
+  websecure:
+    address: ":443"
+  openvpn-tcp:
+    address: ":1194"
+
+providers:
+  file:
+    filename: /etc/traefik/dynamic.yml
+    watch: true
+
+api:
+  dashboard: true
+  insecure: true
+
+log:
+  level: INFO
+
+# TLS options
+tls:
+  options:
+    nohttp2:
+      alpnProtocols:
+        - "http/1.1"
+
+# Let's Encrypt configuration
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: admin@ploscope.com
+      storage: /etc/certs/acme.json
+      httpChallenge:
+        entryPoint: web
+
+http:
+  routers:
+    # HTTP to HTTPS redirect for staging domain (excluding ACME challenges)
+    http-to-https:
+      rule: "Host(`staging.ploscope.com`) && !PathPrefix(`/.well-known/acme-challenge/`)"
+      priority: 1000
+      service: noop@internal
+      entrypoints:
+        - web
+      middlewares:
+        - redirect-to-https
+    
+    # Staging frontend routes - HTTPS
+    staging-frontend-https:
+      rule: "Host(`staging.ploscope.com`)"
+      priority: 1
+      service: frontend
+      entrypoints:
+        - websecure
+      middlewares:
+        - cors-headers
+      tls:
+        certResolver: letsencrypt
+
+    # Staging backend routes - HTTPS
+    staging-backend-https:
+      rule: "Host(`staging.ploscope.com`) && PathPrefix(`/api`)"
+      priority: 2
+      service: backend
+      entrypoints:
+        - websecure
+      middlewares:
+        - cors-headers
+      tls:
+        certResolver: letsencrypt
+
+    # Staging WebSocket routes - HTTPS
+    staging-websocket-https:
+      rule: "Host(`staging.ploscope.com`) && PathPrefix(`/socket.io`)"
+      priority: 10
+      service: backend
+      entrypoints:
+        - websecure
+      middlewares:
+        - websocket-headers
+      tls:
+        certResolver: letsencrypt
+    
+    # Auth routes - HTTPS
+    auth-https:
+      rule: "Host(`staging.ploscope.com`) && PathPrefix(`/api/auth`)"
+      priority: 3
+      service: backend
+      entrypoints:
+        - websecure
+      middlewares:
+        - cors-headers
+      tls:
+        certResolver: letsencrypt
+    
+    # Backend API routes - HTTP for ACME challenges
+    backend-http:
+      rule: "Host(`staging.ploscope.com`) && PathPrefix(`/.well-known/acme-challenge/`)"
+      service: acme-challenge
+      entrypoints:
+        - web
+      priority: 1001
+      middlewares:
+        - cors-headers
+
+    # Frontend routes - HTTP for ACME challenges
+    frontend-http:
+      rule: "Host(`staging.ploscope.com`) && PathPrefix(`/.well-known/acme-challenge/`)"
+      service: acme-challenge
+      entrypoints:
+        - web
+      priority: 1001
+      middlewares:
+        - cors-headers
+
+    # ACME challenge handler for Let's Encrypt
+    acme-challenge:
+      rule: "PathPrefix(`/.well-known/acme-challenge/`)"
+      service: acme-challenge
+      entrypoints:
+        - web
+      priority: 1000
+      middlewares:
+        - cors-headers
+
+    # Traefik metrics endpoint
+    traefik-metrics:
+      rule: "Host(`staging.ploscope.com`) && PathPrefix(`/metrics`)"
+      service: traefik-metrics
+      entrypoints:
+        - websecure
+      priority: 100
+      tls:
+        certResolver: letsencrypt
+
+    # Nexus Repository routes - HTTPS
+    nexus-https:
+      rule: "Host(`nexus.ploscope.com`)"
+      service: nexus
+      entrypoints:
+        - websecure
+      middlewares:
+        - nexus-buffering
+        - nexus-headers
+      tls:
+        certResolver: letsencrypt
+        options: nohttp2
+    
+    grafana-https:
+      rule: "Host(`grafana.ploscope.com`)"
+      service: grafana
+      entrypoints:
+        - websecure
+      middlewares:
+        - cors-headers
+      tls:
+        certResolver: letsencrypt
+        options: nohttp2
+
+    grafana-letsencrypt:
+      rule: "Host(`grafana.ploscope.com`) && PathPrefix(`/.well-known/acme-challenge/`)"
+      service: acme-challenge
+      entrypoints:
+        - web
+      priority: 1001
+      middlewares:
+        - cors-headers
+    
+    prometheus-https:
+      rule: "Host(`prometheus.ploscope.com`)"
+      service: prometheus
+      entrypoints:
+        - websecure
+      middlewares:
+        - prometheus-auth
+        - cors-headers
+      tls:
+        certResolver: letsencrypt
+        options: nohttp2
+    
+    prometheus-letsencrypt:
+      rule: "Host(`prometheus.ploscope.com`) && PathPrefix(`/.well-known/acme-challenge/`)"
+      service: acme-challenge
+      entrypoints:
+        - web
+      priority: 1001
+      middlewares:
+        - cors-headers
+
+    cadvisor-https:
+      rule: "Host(`cadvisor.ploscope.com`)"
+      service: cadvisor
+      entrypoints:
+        - websecure
+      middlewares:
+        - cors-headers
+      tls:
+        certResolver: letsencrypt
+
+    cadvisor-letsencrypt:
+      rule: "Host(`cadvisor.ploscope.com`) && PathPrefix(`/.well-known/acme-challenge/`)"
+      service: acme-challenge
+      entrypoints:
+        - web
+      priority: 1001
+      middlewares:
+        - cors-headers
+
+    node-exporter-https:
+      rule: "Host(`node-exporter.ploscope.com`)"
+      service: node-exporter
+      entrypoints:
+        - websecure
+      middlewares:
+        - cors-headers
+      tls:
+        certResolver: letsencrypt
+
+    node-exporter-letsencrypt:
+      rule: "Host(`node-exporter.ploscope.com`) && PathPrefix(`/.well-known/acme-challenge/`)"
+      service: acme-challenge
+      entrypoints:
+        - web
+      priority: 1001
+      middlewares:
+        - cors-headers
+
+    loki-https:
+      rule: "Host(`loki.ploscope.com`)"
+      service: loki
+      entrypoints:
+        - websecure
+      middlewares:
+        - loki-auth
+        - cors-headers
+      tls:
+        certResolver: letsencrypt
+
+    loki-letsencrypt:
+      rule: "Host(`loki.ploscope.com`) && PathPrefix(`/.well-known/acme-challenge/`)"
+      service: acme-challenge
+      entrypoints:
+        - web
+      priority: 1001
+      middlewares:
+        - cors-headers
+
+  services:
+    # Main application services
+    frontend:
+      loadBalancer:
+        servers:
+          - url: "http://frontend:3000"
+    
+    backend:
+      loadBalancer:
+        servers:
+          - url: "http://backend:5001"
+    
+    # ACME challenge service
+    acme-challenge:
+      loadBalancer:
+        servers:
+          - url: "http://backend:5001"
+    
+    # Traefik metrics service
+    traefik-metrics:
+      loadBalancer:
+        servers:
+          - url: "http://traefik:8082"
+    
+    # Jenkins service
+    jenkins:
+      loadBalancer:
+        servers:
+          - url: "http://jenkins:8080"
+    
+    # Nexus Repository service
+    nexus:
+      loadBalancer:
+        servers:
+          - url: "http://nexus:8081"
+    
+
+    # Monitoring services
+    grafana:
+      loadBalancer:
+        servers:
+          - url: "http://grafana:3000"
+    
+    prometheus:
+      loadBalancer:
+        servers:
+          - url: "http://prometheus:9090"
+    
+    cadvisor:
+      loadBalancer:
+        servers:
+          - url: "http://cadvisor:8080"
+
+    node-exporter:
+      loadBalancer:
+        servers:
+          - url: "http://node-exporter:9100"
+
+    loki:
+      loadBalancer:
+        servers:
+          - url: "http://loki:3100"
+
+  middlewares:
+    # HTTP to HTTPS redirect
+    redirect-to-https:
+      redirectScheme:
+        scheme: https
+        permanent: true
+    
+    # CORS headers for API - Updated to allow localhost for local development
+    cors-headers:
+      headers:
+        accessControlAllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+          - PATCH
+        accessControlAllowHeaders:
+          - "*"
+        accessControlAllowOriginList:
+          - "*"
+          - "http://localhost:3000"
+          - "http://localhost:3001"
+          - "http://127.0.0.1:3000"
+          - "http://127.0.0.1:3001"
+          - "https://staging.ploscope.com"
+        accessControlMaxAge: 100
+        addVaryHeader: true
+    
+    # WebSocket upgrade middleware for entrypoint
+    websocket-upgrade:
+      headers:
+        accessControlAllowMethods:
+          - GET
+          - POST
+          - OPTIONS
+        accessControlAllowHeaders:
+          - "*"
+        accessControlAllowOriginList:
+          - "*"
+          - "http://localhost:3000"
+          - "http://localhost:3001"
+          - "http://127.0.0.1:3000"
+          - "http://127.0.0.1:3001"
+          - "https://staging.ploscope.com"
+        accessControlMaxAge: 100
+        addVaryHeader: true
+        # Forward WebSocket upgrade headers
+        customRequestHeaders:
+          Upgrade: "websocket"
+          Connection: "upgrade"
+        # Allow WebSocket upgrade responses
+        customResponseHeaders:
+          Upgrade: "websocket"
+          Connection: "upgrade"
+    
+    # WebSocket-specific middleware
+    websocket-headers:
+      headers:
+        accessControlAllowMethods:
+          - GET
+          - POST
+          - OPTIONS
+        accessControlAllowHeaders:
+          - "*"
+        accessControlAllowOriginList:
+          - "*"
+          - "http://localhost:3000"
+          - "http://localhost:3001"
+          - "http://127.0.0.1:3000"
+          - "http://127.0.0.1:3001"
+          - "https://staging.ploscope.com"
+        accessControlMaxAge: 100
+        addVaryHeader: true
+        # Allow WebSocket upgrade headers
+        customRequestHeaders:
+          Upgrade: "websocket"
+          Connection: "upgrade"
+        # Allow WebSocket upgrade responses
+        customResponseHeaders:
+          Upgrade: "websocket"
+          Connection: "upgrade"
+    
+    # Nexus-specific middleware for large file uploads
+    nexus-headers:
+      headers:
+        accessControlAllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        accessControlAllowHeaders:
+          - "*"
+        accessControlAllowOriginList:
+          - "*"
+        accessControlMaxAge: 100
+        addVaryHeader: true
+        # Remove content length restrictions for large uploads
+        customRequestHeaders:
+          Connection: "keep-alive"
+        # Allow chunked responses
+        customResponseHeaders:
+          Connection: "keep-alive"
+
+    # Buffering middleware to avoid chunked streaming issues
+    nexus-buffering:
+      buffering:
+        maxRequestBodyBytes: 0
+        memRequestBodyBytes: 0
+    
+    # Basic authentication for Prometheus
+    prometheus-auth:
+      basicAuth:
+        users:
+          - "prometheususer:$apr1$8K8v9rX2$5Y7v8w9x0y1z2a3b4c5d6e"
+    
+    # Basic authentication for Loki
+    loki-auth:
+      basicAuth:
+        users:
+          - "lokiuser:$apr1$9L9w0sY3$6Z8x9y0z1a2b3c4d5e6f7g"
+
+# TCP configuration removed - not needed for main staging application 

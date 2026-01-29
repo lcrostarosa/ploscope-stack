@@ -1,0 +1,149 @@
+syntax = "proto3";
+
+package plosolver.solver;
+
+option go_package = "github.com/plosolver/backend/protos/solver";
+option java_multiple_files = true;
+option java_package = "com.plosolver.grpc.solver";
+option java_outer_classname = "SolverProto";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+import "common.proto";
+
+// =============================================================================
+// Solver Service
+// =============================================================================
+
+service SolverService {
+  rpc GetSolverConfig(google.protobuf.Empty) returns (SolverConfigResponse);
+  rpc GetHandBuckets(google.protobuf.Empty) returns (HandBucketsResponse);
+  rpc GetPlayerProfiles(google.protobuf.Empty) returns (PlayerProfilesResponse);
+  rpc AnalyzeSpot(AnalyzeSpotRequest) returns (AnalyzeSpotResponse);
+  rpc GetAnalysisStatus(GetAnalysisStatusRequest) returns (GetAnalysisStatusResponse);
+  rpc CancelAnalysis(CancelAnalysisRequest) returns (CancelAnalysisResponse);
+}
+
+message SolverConfigResponse {
+  SolverConfig config = 1;
+  plosolver.common.Error error = 2;
+}
+
+message SolverConfig {
+  int32 max_players = 1;
+  repeated string supported_game_types = 2;
+  int32 default_stack_size = 3;
+  int32 min_stack_size = 4;
+  int32 max_stack_size = 5;
+  repeated string supported_positions = 6;
+  repeated string supported_board_textures = 7;
+  repeated string solver_engines = 8;
+  repeated string accuracy_levels = 9;
+}
+
+message HandBucketsResponse {
+  map<string, HandBucket> hand_buckets = 1;
+  plosolver.common.Error error = 2;
+}
+
+message HandBucket {
+  string description = 1;
+  repeated string examples = 2;
+  string equity_range = 3;
+  string play_frequency = 4;
+}
+
+message PlayerProfilesResponse {
+  map<string, PlayerProfile> profiles = 1;
+  plosolver.common.Error error = 2;
+}
+
+message PlayerProfile {
+  string name = 1;
+  string description = 2;
+  int32 vpip = 3;
+  int32 pfr = 4;
+  double aggression_factor = 5;
+  double three_bet_percentage = 6;
+  double fold_to_three_bet = 7;
+  double cbet_percentage = 8;
+  double fold_to_cbet = 9;
+}
+
+message AnalyzeSpotRequest {
+  string user_id = 1;
+  GameState game_state = 2;
+  SolverSettings solver_settings = 3;
+}
+
+message GameState {
+  string game_type = 1;
+  int32 num_players = 2;
+  repeated Player players = 3;
+  string board = 4;
+  string pot_size = 5;
+  string street = 6;
+  repeated string actions = 7;
+}
+
+message Player {
+  string position = 1;
+  string stack_size = 2;
+  string hand = 3;
+  bool is_active = 4;
+  bool is_all_in = 5;
+}
+
+message SolverSettings {
+  string engine = 1;
+  string accuracy = 2;
+  int32 max_iterations = 3;
+  double convergence_threshold = 4;
+  int32 time_limit_seconds = 5;
+}
+
+message AnalyzeSpotResponse {
+  string job_id = 1;
+  string status = 2;
+  string message = 3;
+  plosolver.common.Error error = 4;
+}
+
+message GetAnalysisStatusRequest {
+  string job_id = 1;
+  string user_id = 2;
+}
+
+message GetAnalysisStatusResponse {
+  string job_id = 1;
+  string status = 2;
+  double progress = 3;
+  AnalysisResult result = 4;
+  plosolver.common.Error error = 5;
+}
+
+message AnalysisResult {
+  string equity_analysis = 1;
+  repeated ActionRecommendation recommendations = 2;
+  map<string, double> action_evs = 3;
+  string optimal_strategy = 4;
+  google.protobuf.Timestamp completed_at = 5;
+}
+
+message ActionRecommendation {
+  string action = 1;
+  double frequency = 2;
+  double ev = 3;
+  string reasoning = 4;
+}
+
+message CancelAnalysisRequest {
+  string job_id = 1;
+  string user_id = 2;
+}
+
+message CancelAnalysisResponse {
+  bool success = 1;
+  string message = 2;
+  plosolver.common.Error error = 3;
+}

@@ -1,0 +1,192 @@
+name: Deployment
+
+on:
+    workflow_call:
+        inputs:
+            environment:
+                description: Environment to deploy to
+                required: true
+                type: string
+                default: staging
+            force_deploy:
+                description: Force deployment even if no changes
+                required: false
+                default: false
+                type: boolean
+            registry:
+                description: Container registry (e.g. ghcr.io or docker.io)
+                required: false
+                type: string
+                default: docker.io
+            namespace:
+                description: Registry namespace/org (e.g. ploscope)
+                required: false
+                type: string
+                default: ploscope
+            image-name:
+                description: Image name (e.g. ploscope/frontend)
+                required: true
+                type: string
+            image-tag:
+                description: Image tag (e.g. latest)
+                required: true
+                type: string
+            push:
+                description: Push images to registry
+                required: false
+                type: boolean
+                default: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  actions: write
+  deployments: write
+  checks: write
+  packages: write
+  pages: write
+  discussions: write
+
+env:
+  REGISTRY: docker.io
+  IMAGE_NAME: ploscope
+
+jobs:
+  deploy:
+    name: Deploy (Staging/Production)
+    runs-on: ${{ vars.GHA_RUNNER }}
+    timeout-minutes: 5
+    environment: ${{ github.event.inputs.environment }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.inputs.branch_or_pr || 'master' }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate branch for production
+        if: github.event.inputs.environment == 'production'
+        run: |
+          BRANCH="${{ github.event.inputs.branch_or_pr || 'master' }}"
+          if [ "$BRANCH" != "master" ]; then
+            echo "❌ Production deployments can only be made from the 'master' branch"
+            echo "Current branch: $BRANCH"
+            exit 1
+          fi
+          echo "✅ Production deployment validated - using master branch"
+
+      - name: Validate required secrets
+        run: |
+          if [ -z "${{ secrets.SSH_PRIVATE_KEY }}" ]; then echo "Missing required secret: SSH_PRIVATE_KEY"; exit 1; fi
+          if [ -z "${{ secrets.SSH_HOST }}" ]; then echo "Missing required secret: SSH_HOST"; exit 1; fi
+          if [ -z "${{ secrets.SSH_USER }}" ]; then echo "Missing required secret: SSH_USER"; exit 1; fi
+          if [ -z "${{ secrets.APP_PATH }}" ]; then echo "Missing required secret: APP_PATH"; exit 1; fi
+
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Add server to known hosts
+        run: |
+          ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Determine version and branch
+        id: version
+        run: |
+          ENVIRONMENT="${{ github.event.inputs.environment }}"
+          BRANCH_OR_PR="${{ github.event.inputs.branch_or_pr || 'master' }}"
+          MANUAL_TAG="${{ github.event.inputs.tag }}"
+
+          if [ "$ENVIRONMENT" = "production" ]; then
+            if [ -z "$MANUAL_TAG" ]; then
+              echo "For production deployments, you must provide the image tag via the 'tag' input (e.g., 1.2.3)."
+              exit 1
+            fi
+            echo "TAG=$MANUAL_TAG" >> $GITHUB_OUTPUT
+            echo "DEPLOY_BRANCH=master" >> $GITHUB_OUTPUT
+          else
+            # Staging deployment
+            if [ -n "$MANUAL_TAG" ]; then
+              # Manual tag provided
+              echo "TAG=$MANUAL_TAG" >> $GITHUB_OUTPUT
+              echo "DEPLOY_BRANCH=$BRANCH_OR_PR" >> $GITHUB_OUTPUT
+            else
+              # Default to branch name as tag
+              echo "TAG=$BRANCH_OR_PR" >> $GITHUB_OUTPUT
+              echo "DEPLOY_BRANCH=$BRANCH_OR_PR" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+          echo "Using tag: ${{ steps.version.outputs.TAG }}"
+          echo "Deploying from branch: ${{ steps.version.outputs.DEPLOY_BRANCH }}"
+
+      - name: Deploy to server
+        run: |
+          ENVIRONMENT="${{ github.event.inputs.environment }}"
+          TAG="${{ steps.version.outputs.TAG }}"
+          DEPLOY_BRANCH="${{ steps.version.outputs.DEPLOY_BRANCH }}"
+          HOST="${{ secrets.SSH_HOST }}"
+          USER="${{ secrets.SSH_USER }}"
+          APP_PATH="${{ secrets.APP_PATH }}"
+
+          echo "🚀 Starting $ENVIRONMENT deployment..."
+          echo "📦 Tag: $TAG"
+          echo "🌿 Branch: $DEPLOY_BRANCH"
+
+          # Execute deployment on server
+          ssh $USER@$HOST << EOF
+            set -e
+            echo "📦 Updating code from repository..."
+            cd "$APP_PATH"
+            git fetch origin
+            git reset --hard origin/$DEPLOY_BRANCH
+
+            echo "🐳 Checking and pulling images from registry..."
+            # Check each image individually and use staging fallback if needed
+            if docker manifest inspect ${REGISTRY}/${{ inputs.image-name }}:${TAG} >/dev/null 2>&1; then
+              echo "✅ Image found: ${TAG}"
+              IMAGE_TAG="${TAG}"
+              docker pull ${REGISTRY}/${{ inputs.image-name }}:${TAG}
+            else
+              echo "⚠️  Image not found, exiting"
+              exit 1
+            fi
+
+            echo "🔧 Deploying application..."
+            echo "Using tags: ${IMAGE_TAG}"
+            
+            # Set environment variables for docker compose
+            export IMAGE_TAG="${IMAGE_TAG}"
+            
+            GITHUB_REPOSITORY=${{ github.repository }} docker compose -f docker-compose.$ENVIRONMENT.yml --env-file env.$ENVIRONMENT up -d
+
+            echo "🧹 Cleaning up unused images..."
+            docker image prune -f
+
+            echo "✅ $ENVIRONMENT deployment completed successfully!"
+            echo "🌐 Application available at: https://ploscope.com"
+            echo "📦 Images used:"
+            echo "  Image: ${REGISTRY}/${{ inputs.image-name }}:${IMAGE_TAG}"
+          EOF
+
+
+      - name: Notify deployment status
+        if: always()
+        run: |
+          ENVIRONMENT="${{ github.event.inputs.environment }}"
+          TAG="${{ steps.version.outputs.TAG }}"
+          DEPLOY_BRANCH="${{ steps.version.outputs.DEPLOY_BRANCH }}"
+
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "🎉 $ENVIRONMENT deployment completed successfully!"
+            echo "🌐 Application: https://ploscope.com"
+            echo "📊 Traefik Dashboard: https://ploscope.com:8080"
+            echo "📦 Images used:"
+            echo "  Image: ${{ inputs.registry }}/${{ inputs.image-name }}:${TAG}"
+            echo "🏷️  Tag: $TAG"
+            echo "🌿 Branch: $DEPLOY_BRANCH"
+          else
+            echo "❌ $ENVIRONMENT deployment failed!"
+            exit 1
+          fi

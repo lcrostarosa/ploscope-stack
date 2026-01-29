@@ -1,0 +1,19 @@
+# cython: language_level=3
+# cython: boundscheck=False
+# cython: wraparound=False
+# cython: initializedcheck=False
+# cython: nonecheck=False
+# cython: cdivision=True
+
+from celery.src.celery_app import celery
+
+
+@celery.task
+def process_spot_simulation(job_id):
+    # TODO: Implement logic to fetch job from DB, run simulation, update status/result
+    pass
+
+@celery.task
+def process_solver_analysis(job_id):
+    # TODO: Implement logic to fetch job from DB, run solver, update status/result
+    pass

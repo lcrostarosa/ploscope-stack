@@ -1,0 +1,318 @@
+name: Build and Push Artifacts
+
+on:
+  push:
+    branches: [main, master, develop]
+    tags: ['v*']
+  pull_request:
+    branches: [main, master, develop]
+  workflow_dispatch:
+    inputs:
+      docker_tag:
+        description: 'Docker tag to use for images (e.g., latest, staging, v1.0.0)'
+        type: string
+        default: 'latest'
+
+permissions:
+  contents: read
+  pull-requests: read
+
+env:
+  REGISTRY: docker.io
+  IMAGE_NAME: ploscope
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  detect-changes:
+    runs-on: ${{ vars.GHA_RUNNER }}
+    timeout-minutes: 1
+    outputs:
+      frontend_changed: ${{ steps.filter.outputs.frontend_changed }}
+      playwright_changed: ${{ steps.filter.outputs.playwright_changed }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # Fetch full history for change detection
+
+      - name: Detect changes in service directories
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          filters: |
+            frontend_changed:
+              - 'src/**'
+              - 'Dockerfile'
+              - 'scripts/**'
+              - 'package.json'
+              - 'package-lock.json'
+            playwright_changed:
+              - 'Dockerfile.playwright'
+              - 'playwright.config.ts'
+              - '__tests__/cucumber/**'
+
+  lint:
+    name: Lint Code
+    runs-on: ${{ vars.GHA_RUNNER }}
+    needs: [detect-changes]
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+      - name: Cache Node.js dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+      - name: Install dependencies
+        run: npm ci
+      - name: Typecheck (frontend)
+        run: |
+          npm run typecheck:ci
+      - name: Run linting
+        run: make lint
+      - name: Cache lint results
+        uses: actions/cache@v4
+        with:
+          path: |
+            .eslintcache
+          key: ${{ runner.os }}-lint-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-lint-
+
+  build-validation:
+    name: Build Validation
+    needs: [lint]
+    runs-on: ${{ vars.GHA_RUNNER }}
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        include:
+          - service: frontend
+            path: .
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node.js (for frontend validation)
+        if: matrix.service == 'frontend'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: ${{ matrix.path }}/package-lock.json
+
+      - name: Cache Node.js dependencies
+        if: matrix.service == 'frontend'
+        uses: actions/cache@v4
+        with:
+          path: |
+            src/node_modules
+            ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('src/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+      - name: Validate dependencies
+        run: |
+          echo "🔍 Validating dependencies..."
+          cd ${{ matrix.path }}
+          npm ci --only=production --ignore-scripts
+          echo "✅ Frontend dependencies validated"
+
+  unit-test:
+    name: Unit Tests
+    runs-on: ${{ vars.GHA_RUNNER }}
+    needs: [lint, build-validation]
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Cache Node.js dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            ~/.npm
+            .eslintcache
+          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Cache test results
+        uses: actions/cache@v4
+        with:
+          path: |
+            coverage
+            .pytest_cache
+          key: ${{ runner.os }}-test-results-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-test-results-
+
+      - name: Install test dependencies
+        run: |
+          npm ci
+          echo "✅ Test environment setup complete"
+
+      - name: Run unit tests
+        run: make test-unit
+        env:
+          POSTGRES_USER: testuser
+          POSTGRES_PASSWORD: testpassword
+          POSTGRES_DB: plosolver
+          POSTGRES_HOST: localhost
+          RABBITMQ_HOST: localhost
+          DATABASE_URL: postgresql://testuser:testpassword@localhost:5432/plosolver
+          BACKEND_LOGS: ''
+
+      - name: Save Node.js dependencies cache
+        uses: actions/cache@v4
+        if: always()
+        with:
+          path: |
+            node_modules
+            ~/.npm
+            .eslintcache
+          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
+
+      - name: Save test results cache
+        uses: actions/cache@v4
+        if: always()
+        with:
+          path: |
+            htmlcov
+            coverage
+            .pytest_cache
+          key: ${{ runner.os }}-test-results-${{ github.sha }}
+
+      - name: Upload test coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-coverage-${{ github.sha }}
+          path: |
+            htmlcov/
+            coverage/
+          retention-days: 30
+
+  build-amd-images:
+    name: Build and Push Images
+    runs-on: ${{ vars.GHA_RUNNER }}
+    needs: [detect-changes, unit-test, lint, build-validation]
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - image: frontend
+            context: .
+            file: Dockerfile
+            changed_output: frontend_changed
+          - image: playwright
+            context: .
+            file: Dockerfile.playwright
+            changed_output: playwright_changed
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check if changes detected
+        id: check-changes
+        run: |
+          CHANGED="${{ needs.detect-changes.outputs[matrix.changed_output] }}"
+          echo "Changes detected for ${{ matrix.image }}: $CHANGED"
+
+          if [ "$CHANGED" = "true" ]; then
+            echo "Building new image for ${{ matrix.image }}"
+            echo "should_build=true" >> $GITHUB_OUTPUT
+          else
+            echo "No changes detected for ${{ matrix.image }}, using master image"
+            echo "should_build=false" >> $GITHUB_OUTPUT
+            echo "image_tag=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.image }}:master" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Login to Docker Hub
+        if: steps.check-changes.outputs.should_build == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        if: steps.check-changes.outputs.should_build == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Determine platforms
+        if: steps.check-changes.outputs.should_build == 'true'
+        id: platforms
+        run: |
+          REF="${GITHUB_REF}"
+          PLATFORMS="linux/amd64"
+          echo "value=$PLATFORMS" >> "$GITHUB_OUTPUT"
+
+      - name: Extract metadata
+        if: steps.check-changes.outputs.should_build == 'true'
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.image }}
+          tags: |
+            type=raw,value=PR-${{ github.event.pull_request.number }},enable=${{ github.event_name == 'pull_request' }}
+            type=raw,value=latest-${{ github.event.pull_request.number }},enable=${{ github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/') || startsWith(github.ref, 'refs/heads/') || github.ref == 'refs/heads/master'}}
+            type=raw,value=staging,enable=${{ github.ref == 'refs/heads/master' }}
+            type=raw,value=master,enable=${{ github.ref == 'refs/heads/master' }}
+            type=raw,value=production,enable=${{ github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/') }}
+            type=semver,pattern={{version}},enable=${{ startsWith(github.ref, 'refs/tags/') }}
+
+      - name: Build and push ${{ matrix.image }}
+        if: steps.check-changes.outputs.should_build == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: ${{ steps.platforms.outputs.value }}
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.image }}:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.image }}:buildcache,mode=max
+          build-args: |
+            NODE_ENV=production
+            REACT_APP_API_URL=/api
+            BUILD_ENV=production
+            PIP_INDEX_URL=${{ secrets.PIP_INDEX_URL }}
+            PIP_TRUSTED_HOST=${{ secrets.PIP_TRUSTED_HOST }}
+            NEXUS_PYPI_PASSWORD=${{ secrets.NEXUS_PYPI_PASSWORD }}
+          secrets: |
+            "nexus_password=${{ secrets.NEXUS_PYPI_PASSWORD }}"
+
+      - name: Skip build for ${{ matrix.image }}
+        if: steps.check-changes.outputs.should_build == 'false'
+        run: |
+          echo "✅ Skipping build for ${{ matrix.image }} - no changes detected"
+          echo "📦 Using existing image: ${{ steps.check-changes.outputs.image_tag }}"
+
+      - name: Skip image build (not in list)
+        if: steps.check-changes.outputs.should_build == 'false'
+        run: |
+          echo "Skipping build for ${{ matrix.image }} because it was not in the list of images to build."

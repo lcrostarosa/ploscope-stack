@@ -1,0 +1,80 @@
+name: Deploy via Ansible
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to deploy"
+        required: true
+        default: "staging"
+        type: choice
+        options:
+          - staging
+          - production
+      image_tag:
+        description: "Image tag to deploy (e.g., PR-123, staging, production, 1.2.3)"
+        required: false
+        default: "staging"
+  push:
+    branches:
+      - master
+    paths:
+      - 'playbooks/**'
+      - '01_appuser.yml'
+      - '02_deploy.yml'
+      - 'inventories/**'
+      - 'variables/**'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'staging' }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install Ansible and dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ansible
+
+      - name: Create variables file from secrets
+        run: |
+          mkdir -p variables
+          cat > variables/vars.yml <<'VARS'
+          git_repo_url: "${{ secrets.GIT_REPO_URL }}"
+          git_branch: "${{ github.ref_name }}"
+          project_dir: "${{ secrets.PROJECT_DIR }}"
+          ssl_dir: "${{ secrets.SSL_DIR }}"
+          hetzner_server_ip: "${{ secrets.HETZNER_SERVER_IP }}"
+          hetzner_private_key_file: "~/.ssh/deploy_key"
+          hetzner_public_key_file: "~/.ssh/deploy_key.pub"
+          domain: "${{ vars.DOMAIN }}"
+          appuser_password: "${{ secrets.APPUSER_PASSWORD }}"
+          github_token: "${{ secrets.GH_TOKEN }}"
+          github_username: "${{ vars.GH_USERNAME }}"
+          gha_runner_token: "${{ secrets.GHA_RUNNER_TOKEN }}"
+          docker_username: "${{ secrets.DOCKER_USERNAME }}"
+          docker_password: "${{ secrets.DOCKER_PASSWORD }}"
+          image_tag: "${{ github.event.inputs.image_tag || (github.ref_name == 'master' && 'production') || 'staging' }}"
+          VARS
+
+      - name: Add SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.HETZNER_SERVER_IP }} >> ~/.ssh/known_hosts
+
+      - name: Run Ansible playbook
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: "False"
+        run: |
+          ansible-playbook -i inventories/inventory.yml 02_deploy.yml -e @variables/vars.yml

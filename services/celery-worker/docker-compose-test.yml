@@ -1,0 +1,167 @@
+# Test Environment Docker Compose Configuration
+# Removed version attribute as it's obsolete in newer Docker Compose versions
+
+services:
+  db:
+    image: postgres:15
+    container_name: plosolver-db-test
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=testuser
+      - POSTGRES_PASSWORD=testpassword
+      - POSTGRES_DB=plosolver
+    networks:
+      - plo-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U testuser -d plosolver"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: plosolver-redis-test
+    ports:
+      - "6379:6379"
+    environment:
+      - REDIS_PASSWORD=test_redis_password
+    networks:
+      - plo-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: plosolver-rabbitmq-test
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=testuser
+      - RABBITMQ_DEFAULT_PASS=testpassword
+      - RABBITMQ_DEFAULT_VHOST=/plosolver
+    networks:
+      - plo-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq-init:
+    image: ploscope/rabbitmq-init:staging
+    container_name: plosolver-rabbitmq-init-test
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USERNAME=testuser
+      - RABBITMQ_PASSWORD=testpassword
+      - RABBITMQ_VHOST=/plosolver
+      - RABBITMQ_SPOT_QUEUE=spot-processing
+      - RABBITMQ_SOLVER_QUEUE=solver-processing
+      - RABBITMQ_SPOT_DLQ=spot-processing-dlq
+      - RABBITMQ_SOLVER_DLQ=solver-processing-dlq
+      - TESTING=true
+      - CONTAINER_ENV=docker
+      - LOG_LEVEL=DEBUG
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - plo-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import pika; print('RabbitMQ init ready')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: "no"
+
+  db-migrate:
+    image: ploscope/db-init:staging
+    container_name: plosolver-db-migrate-test
+    environment:
+      - DATABASE_URL=postgresql://testuser:testpassword@db:5432/plosolver
+      - POSTGRES_DB=plosolver
+      - POSTGRES_USER=testuser
+      - POSTGRES_PASSWORD=testpassword
+      - POSTGRES_HOST=db
+      - POSTGRES_MIGRATE_HOST=db
+      - PGPASSWORD=testpassword
+      # Optional schema override for migrations; can be overridden at runtime
+      - SCHEMA_USER=${SCHEMA_USER:-}
+      - SCHEMA_PASSWORD=${SCHEMA_PASSWORD:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - plo-network
+
+  celeryworker:
+    image: ploscope/celery-worker:staging
+    container_name: plosolver-celeryworker-test
+    environment:
+      - LOG_LEVEL=DEBUG
+      - DATABASE_URL=postgresql://testuser:testpassword@db:5432/plosolver
+      - POSTGRES_USER=testuser
+      - POSTGRES_PASSWORD=testpassword
+      - POSTGRES_DB=plosolver
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - SECRET_KEY=test-secret-key
+      - RABBITMQ_VHOST=/plosolver
+      - RABBITMQ_DEFAULT_VHOST=/plosolver
+      - RABBITMQ_DEFAULT_USER=testuser
+      - RABBITMQ_DEFAULT_PASS=testpassword
+      - RABBITMQ_USERNAME=testuser
+      - RABBITMQ_PASSWORD=testpassword
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_SPOT_QUEUE=spot-processing
+      - RABBITMQ_SOLVER_QUEUE=solver-processing
+      - RABBITMQ_SPOT_DLQ=spot-processing-dlq
+      - RABBITMQ_SOLVER_DLQ=solver-processing-dlq
+      - CELERY_RESULT_BACKEND=redis://:test_redis_password@redis:6379/0
+      - CELERY_TASK_SERIALIZER=json
+      - CELERY_RESULT_SERIALIZER=json
+      - CELERY_ACCEPT_CONTENT=['json']
+      - CELERY_TIMEZONE=UTC
+      - CELERY_ENABLE_UTC=True
+      - CELERY_TASK_TRACK_STARTED=True
+      - CELERY_TASK_TIME_LIMIT=30*60
+      - CELERY_TASK_SOFT_TIME_LIMIT=25*60
+      - CELERY_WORKER_PREFETCH_MULTIPLIER=1
+      - CELERY_WORKER_MAX_TASKS_PER_CHILD=1000
+      - CELERY_WORKER_CONCURRENCY=2
+      - CELERY_HEALTH_PORT=5002
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - REDIS_PASSWORD=test_redis_password
+      - REDIS_URL=redis://:test_redis_password@redis:6379/0
+      - BUILD_ENV=test
+      - PGPASSWORD=testpassword
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      rabbitmq-init:
+        condition: service_completed_successfully
+      db-migrate:
+        condition: service_completed_successfully
+    restart: "no"
+    networks:
+      - plo-network
+
+networks:
+  plo-network:
+    driver: bridge
+    name: plosolver-test-network

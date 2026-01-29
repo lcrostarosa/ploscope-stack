@@ -1,0 +1,287 @@
+# Local Development Docker Compose Configuration
+# Removed version attribute as it's obsolete in newer Docker Compose versions
+
+services:
+  db:
+    image: postgres:15
+    container_name: plosolver-db-localdev
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=plosolver
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    networks:
+      - plo-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: plosolver-rabbitmq-localdev
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: plosolver
+      RABBITMQ_DEFAULT_PASS: dev_password_2024
+      RABBITMQ_DEFAULT_VHOST: /plosolver
+    volumes:
+      - ./data/rabbitMQ:/var/lib/rabbitmq
+    networks:
+      - plo-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: plosolver-redis-localdev
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./data/redis:/data
+    command: redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy allkeys-lru --requirepass dev_redis_password_2024
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "dev_redis_password_2024", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - plo-network
+
+  traefik:
+    image: traefik:v3.4.4
+    container_name: plosolver-traefik-localdev
+    command:
+      - "--configfile=/etc/traefik/traefik.yml"
+    ports:
+      - "80:80"
+      - "8080:8080"
+      - "8082:8082"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./server/traefik/localdev/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./server/traefik/localdev/dynamic.docker.yml:/etc/traefik/dynamic.yml:ro
+    networks:
+      - plo-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/dashboard/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  backend:
+    image: ploscope/backend:master
+    build:
+      context: src/backend
+      dockerfile: Dockerfile.dev
+      args:
+        BUILD_ENV: development
+        BUILDKIT_INLINE_CACHE: 1
+    container_name: plosolver-backend-localdev
+    environment:
+      - FLASK_APP=core.app
+      - FLASK_DEBUG=true
+      - FLASK_ENV=development
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/plosolver
+      - SECRET_KEY=dev-secret-key
+      - JWT_SECRET_KEY=dev-jwt-secret-key
+      - LOG_LEVEL=DEBUG
+      - FRONTEND_URL=http://localhost:3000
+      - QUEUE_PROVIDER=rabbitmq
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USERNAME=plosolver
+      - RABBITMQ_PASSWORD=dev_password_2024
+      - RABBITMQ_VHOST=/plosolver
+      - RABBITMQ_SPOT_QUEUE=spot-processing
+      - RABBITMQ_SOLVER_QUEUE=solver-processing
+      - RABBITMQ_SPOT_DLQ=spot-processing-dlq
+      - RABBITMQ_SOLVER_DLQ=solver-processing-dlq
+      - PGPASSWORD=postgres
+      - POSTGRES_PASSWORD=postgres
+    volumes:
+      - ./src/backend:/app/backend
+      - ./logs:/app/logs
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "5001:5001"
+    networks:
+      - plo-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5001/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  frontend:
+    image: ploscope/frontend:master
+    build:
+      context: src/frontend
+      dockerfile: Dockerfile.dev
+      args:
+        NODE_ENV: development
+        REACT_APP_API_URL: /api
+        BUILDKIT_INLINE_CACHE: 1
+    container_name: plosolver-frontend-localdev
+    environment:
+      - NODE_ENV=development
+      - REACT_APP_API_URL=/api
+      - CHOKIDAR_USEPOLLING=true
+      - WATCHPACK_POLLING=true
+    volumes:
+      - ./public/:/app/public/
+      - ./src/frontend:/app
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+    networks:
+      - plo-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: plosolver-prometheus-localdev
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./data/prometheus:/prometheus
+      - ./server/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - plo-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: plosolver-grafana-localdev
+    networks:
+      - plo-network
+    ports:
+      - "3006:3000"
+    env_file:
+      - env.development
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD:-changeme}
+      - GF_USERS_ALLOW_SIGN_UP=${GF_USERS_ALLOW_SIGN_UP:-false}
+    volumes:
+      - ./data/grafana:/var/lib/grafana
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/login"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  celeryworker:
+    image: ploscope/celery-worker:master
+    build:
+      context: src/celery
+      dockerfile: Dockerfile
+      args:
+        BUILDKIT_INLINE_CACHE: 1
+        BUILD_ENV: development
+    container_name: plosolver-celeryworker-localdev
+    env_file:
+      - env.development
+    environment:
+      - CELERY_BROKER_URL=amqp://plosolver:dev_password_2024@rabbitmq:5672/%2Fplosolver
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/plosolver
+      - PGPASSWORD=postgres
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - plo-network
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "celery"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+  rabbitmq-init:
+    image: ploscope/rabbitmq-init:master
+    container_name: plosolver-rabbitmq-init-localdev
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USERNAME=plosolver
+      - RABBITMQ_PASSWORD=dev_password_2024
+      - RABBITMQ_VHOST=/plosolver
+      - RABBITMQ_SPOT_QUEUE=spot-processing
+      - RABBITMQ_SOLVER_QUEUE=solver-processing
+      - RABBITMQ_SPOT_DLQ=spot-processing-dlq
+      - RABBITMQ_SOLVER_DLQ=solver-processing-dlq
+      - CONTAINER_ENV=docker
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - plo-network
+
+  db-migrate:
+    image: ploscope/db-init:master
+    build:
+      context: src/db-init
+      dockerfile: Dockerfile
+      args:
+        BUILDKIT_INLINE_CACHE: 1
+    container_name: plosolver-db-migrate-localdev
+    env_file:
+      - env.development
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/plosolver
+      - POSTGRES_DB=plosolver
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_HOST=db
+      - POSTGRES_MIGRATE_HOST=db
+      - PGPASSWORD=postgres
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles:
+      - migrate
+    restart: "no"
+    networks:
+      - plo-network
+
+volumes:
+  rabbitmq_data:
+
+networks:
+  plo-network:
+    driver: bridge 

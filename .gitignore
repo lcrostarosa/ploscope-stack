@@ -1,0 +1,43 @@
+# Environment files (contain secrets)
+.env
+.env.local
+.env.*.local
+
+# Cloned repositories (development)
+repos/
+
+# Logs
+logs/
+*.log
+
+# Backups
+backups/
+*.sql
+*.sql.gz
+
+# Docker volumes (if exported)
+data/
+volumes/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temp files
+*.tmp
+*.temp
+.cache/
+
+# SSL certificates (if local)
+certs/
+*.pem
+*.crt
+*.key
+acme.json

@@ -1,0 +1,187 @@
+name: Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to deploy to (e.g., staging, production)
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - production
+      branch_or_pr:
+        description: Branch name or PR number to deploy from
+        required: false
+        default: main
+
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  actions: write
+  deployments: write
+  checks: write
+  packages: write
+  pages: write
+  discussions: write
+
+env:
+  REGISTRY: docker.io
+  IMAGE_NAME: ploscope
+
+jobs:
+  deploy:
+    name: Deploy (Staging/Production)
+    runs-on: ${{ vars.GHA_RUNNER }}
+    timeout-minutes: 5
+    environment: ${{ github.event.inputs.environment }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.inputs.branch_or_pr || 'main' }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate branch for production
+        if: github.event.inputs.environment == 'production'
+        run: |
+          BRANCH="${{ github.event.inputs.branch_or_pr || 'main' }}"
+          if [ "$BRANCH" != "main" ]; then
+            echo "❌ Production deployments can only be made from the 'main' branch"
+            echo "Current branch: $BRANCH"
+            exit 1
+          fi
+          echo "✅ Production deployment validated - using master branch"
+
+      - name: Validate required secrets
+        run: |
+          if [ -z "${{ secrets.SSH_PRIVATE_KEY }}" ]; then echo "Missing required secret: SSH_PRIVATE_KEY"; exit 1; fi
+          if [ -z "${{ secrets.SSH_HOST }}" ]; then echo "Missing required secret: SSH_HOST"; exit 1; fi
+          if [ -z "${{ secrets.SSH_USER }}" ]; then echo "Missing required secret: SSH_USER"; exit 1; fi
+          if [ -z "${{ secrets.APP_PATH }}" ]; then echo "Missing required secret: APP_PATH"; exit 1; fi
+
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Add server to known hosts
+        run: |
+          ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Determine version and branch
+        id: version
+        run: |
+          ENVIRONMENT="${{ github.event.inputs.environment }}"
+          BRANCH_OR_PR="${{ github.event.inputs.branch_or_pr || 'master' }}"
+          MANUAL_TAG="${{ github.event.inputs.tag }}"
+
+          echo "✅ Using branch name directly: $BRANCH_OR_PR"
+          DEPLOY_BRANCH="$BRANCH_OR_PR"
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1.0.3
+
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          allenvs: true
+          script: |
+            set -e
+            echo "🚀 Deploying backend..."
+
+            # Set environment variables directly in the SSH session
+            export APP_PATH=~/ploscope/redis
+            export ENVIRONMENT=${{ inputs.environment }}
+            export REF_NAME="${{ github.ref_name }}"
+            export REF_TYPE="${{ github.ref_type }}"
+
+            export APP_NAME=redis
+
+            mkdir -p ~/ploscope
+
+            export APP_PATH=${{ secrets.APP_PATH }}
+
+            export BUILD_ENV="production"
+            export REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
+
+            # Check if the Docker network 'plo-network-cloud' exists, create if not
+            if ! docker network inspect plo-network-cloud >/dev/null 2>&1; then
+              echo "🔗 Creating Docker network plo-network-cloud with subnet 172.30.1.0/24..."
+              docker network create --subnet=172.30.1.0/24 plo-network-cloud
+            else
+              echo "🔗 Docker network plo-network-cloud already exists."
+            fi
+
+            if [ ! -d "$HOME/ploscope/$APP_NAME/.git" ]; then
+              echo "📥 Repository doesn't exist, cloning..."
+              cd ~/ploscope
+              git clone git@github.com:ploscope/$APP_NAME.git
+              cd $APP_NAME
+              git fetch --prune --tags origin
+              git checkout ${{ steps.version.outputs.DEPLOY_BRANCH }}
+              git pull origin ${{ steps.version.outputs.DEPLOY_BRANCH }}
+            else
+              echo "📂 Repository exists, pulling latest changes..."
+              cd ~/ploscope/$APP_NAME
+              git fetch --prune --tags origin
+              git checkout ${{ steps.version.outputs.DEPLOY_BRANCH }}
+              git pull origin ${{ steps.version.outputs.DEPLOY_BRANCH }}
+            fi
+
+            echo "🔧 Starting Docker Compose..."
+            docker login -u ${{ secrets.DOCKERHUB_USERNAME }} -p ${{ secrets.DOCKERHUB_TOKEN }} docker.io
+            docker compose pull
+            docker compose up -d
+
+            # Wait for the $APP_NAME container to become healthy before exiting
+            echo "⏳ Waiting for $APP_NAME container to become healthy..."
+
+            for i in {1..30}; do
+              STATUS=$(docker inspect --format='{{.State.Health.Status}}' $APP_NAME-${{ inputs.environment }} 2>/dev/null || echo "notfound")
+              if [ "$STATUS" = "healthy" ]; then
+                echo "✅ $APP_NAME container is healthy."
+                echo "📋 Health check logs:"
+                docker inspect --format='{{range .State.Health.Log}}{{.Output}}{{end}}' $APP_NAME-${{ inputs.environment }} || echo "Could not retrieve health logs"
+                break
+              elif [ "$STATUS" = "unhealthy" ]; then
+                echo "❌ $APP_NAME container is unhealthy."
+                echo "📋 Container logs:"
+                docker logs $APP_NAME-${{ inputs.environment }} --tail 50 || echo "Could not retrieve logs"
+                echo "📋 Health check logs:"
+                docker inspect --format='{{range .State.Health.Log}}{{.Output}}{{end}}' $APP_NAME-${{ inputs.environment }} || echo "Could not retrieve health logs"
+                echo "📋 Health check details:"
+                docker inspect --format='{{json .State.Health}}' $APP_NAME-${{ inputs.environment }} | jq '.' || echo "Could not retrieve health details"
+                exit 1
+              elif [ "$STATUS" = "notfound" ]; then
+                echo "❌ $APP_NAME container is not found."
+                echo "📋 Available containers:"
+                docker ps -a || echo "Could not list containers"
+                exit 1
+              else
+                echo "⏳ Waiting for health status... (current: $STATUS)"
+                # Show health check logs even while starting
+                if [ "$STATUS" != "starting" ]; then
+                  echo "📋 Recent health check logs:"
+                  docker inspect --format='{{range .State.Health.Log}}{{.Output}}{{end}}' $APP_NAME-${{ inputs.environment }} 2>/dev/null || echo "No health logs available yet"
+                fi
+              fi
+
+              sleep 1
+              if [ $i -eq 30 ]; then
+                echo "❌ Timeout waiting for $APP_NAME container to become healthy."
+                echo "📋 Container logs:"
+                docker logs $APP_NAME-${{ inputs.environment }} --tail 50 || echo "Could not retrieve logs"
+                echo "📋 Health check logs:"
+                docker inspect --format='{{range .State.Health.Log}}{{.Output}}{{end}}' $APP_NAME-${{ inputs.environment }} || echo "Could not retrieve health logs"
+                echo "📋 Health check details:"
+                docker inspect --format='{{json .State.Health}}' $APP_NAME-${{ inputs.environment }} | jq '.' || echo "Could not retrieve health details"
+                echo "📋 Manual health check test:"
+                docker exec $APP_NAME-${{ inputs.environment }} python /app/health_check.py || echo "Could not run manual health check"
+                exit 1
+              fi
+            done
+
+            echo "🎉 Deployment completed successfully!"

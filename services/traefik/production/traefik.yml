@@ -1,0 +1,62 @@
+# Production Traefik configuration
+entryPoints:
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+          permanent: true
+  websecure:
+    address: ":443"
+  metrics:
+    address: ":8082"
+  openvpn-tcp:
+    address: ":1194"
+
+providers:
+  file:
+    filename: /etc/traefik/dynamic.yml
+    watch: true
+
+api:
+  dashboard: true
+  insecure: true
+
+log:
+  level: INFO
+
+accessLog:
+  filePath: "/var/log/traefik/access.log"
+  bufferingSize: 100
+  filters:
+    statusCodes: ["403", "200"]
+  fields:
+    defaultMode: keep
+    names:
+      ClientHost: keep
+
+# Let's Encrypt configuration
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: lucas@ploscope.com
+      storage: /etc/certs/acme.json
+      httpChallenge:
+        entryPoint: web 
+
+metrics:
+  prometheus:
+    entryPoint: metrics
+    addEntryPointsLabels: true
+    addServicesLabels: true
+    buckets:
+      - 0.1
+      - 0.3
+      - 1.2
+      - 5.0
+
+tracing:
+  serviceName: plosolver-traefik
+  sampleRate: 1.0 

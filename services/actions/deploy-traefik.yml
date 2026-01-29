@@ -1,0 +1,92 @@
+name: Deploy Traefik
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+      branch:
+        description: 'Branch to deploy'
+        required: true
+        default: 'main'
+
+jobs:
+  deploy:
+    runs-on: ${{ vars.GHA_RUNNER }}
+    steps:
+      - name: Deploy Traefik
+        uses: ./
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          environment_vars: |
+            {
+              "APP_PATH": "~/ploscope/traefik",
+              "ENVIRONMENT": "${{ inputs.environment }}",
+              "TRAEFIK_DOMAIN": "${{ vars.TRAEFIK_DOMAIN }}",
+              "TRAEFIK_LOG_LEVEL": "${{ vars.TRAEFIK_LOG_LEVEL }}",
+              "ACME_EMAIL": "${{ vars.ACME_EMAIL }}",
+              "FRONTEND_DOMAIN": "${{ vars.FRONTEND_DOMAIN }}",
+              "FRONTEND_URL": "${{ vars.FRONTEND_URL }}",
+              "WEBSOCKET_CORS_ORIGINS": "${{ vars.WEBSOCKET_CORS_ORIGINS }}",
+              "LOG_LEVEL": "${{ vars.LOG_LEVEL }}",
+              "BUILD_ENV": "${{ vars.BUILD_ENV }}",
+              "RESTART_POLICY": "${{ vars.RESTART_POLICY }}",
+              "VOLUME_MODE": "${{ vars.VOLUME_MODE }}"
+            }
+          script: |
+            echo "🚀 Deploying traefik..."
+            
+            mkdir -p ~/ploscope
+
+            # Check if the Docker network 'plo-network-cloud' exists, create if not
+            if ! docker network inspect plo-network-cloud >/dev/null 2>&1; then
+              echo "🔗 Creating Docker network plo-network-cloud with subnet 172.30.1.0/24..."
+              docker network create --subnet=172.30.1.0/24 plo-network-cloud
+            else
+              echo "🔗 Docker network plo-network-cloud already exists."
+            fi
+            
+            if [ ! -d "$HOME/ploscope/traefik/.git" ]; then
+              echo "📥 Repository doesn't exist, cloning..."
+              cd ~/ploscope
+              git clone git@github.com:ploscope/traefik.git traefik
+              cd traefik
+              git checkout ${{ inputs.branch }}
+            else
+              echo "📂 Repository exists, pulling latest changes..."
+              cd ~/ploscope/traefik
+              git fetch origin
+              git reset --hard origin/${{ inputs.branch }}
+            fi
+
+            docker compose -f docker-compose.cloud.yml up -d
+
+            # Wait for the traefik container to become healthy before exiting
+            echo "⏳ Waiting for traefik container to become healthy..."
+            for i in {1..30}; do
+              STATUS=$(docker inspect --format='{{.State.Health.Status}}' traefik-${ENVIRONMENT} 2>/dev/null || echo "notfound")
+              if [ "$STATUS" = "healthy" ]; then
+                echo "✅ Traefik container is healthy."
+                break
+              elif [ "$STATUS" = "unhealthy" ]; then
+                echo "❌ Traefik container is unhealthy."
+                exit 1
+              elif [ "$STATUS" = "notfound" ]; then
+                echo "⚠️  Traefik container not found. Waiting..."
+              else
+                echo "⏳ Waiting for health status... (current: $STATUS)"
+              fi
+              sleep 5
+              if [ $i -eq 30 ]; then
+                echo "❌ Timeout waiting for traefik container to become healthy."
+                exit 1
+              fi
+            done

@@ -1,0 +1,139 @@
+@use '../../styles/Variables' as *;
+
+.auth-error-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--modal-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  backdrop-filter: blur(4px);
+}
+
+.auth-error-modal {
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  box-shadow: 0 20px 40px var(--shadow-dark);
+  max-width: 90%;
+  width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
+  animation: modalSlideIn 0.3s ease-out;
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.auth-error-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--gray-medium);
+}
+
+.auth-error-modal-header h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--dark-gray);
+}
+
+
+
+.auth-error-modal-content {
+  padding: 24px;
+}
+
+.auth-error-message {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.auth-error-message p {
+  margin: 0 0 8px 0;
+  color: var(--dark-gray);
+  font-size: 1rem;
+}
+
+.auth-error-subtitle {
+  color: var(--gray-text);
+  font-size: 0.9rem;
+}
+
+.auth-error-login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+
+
+
+
+.login-error {
+  background: var(--hh-error-bg);
+  color: var(--red-error-dark);
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  border: 1px solid var(--hh-error-border);
+}
+
+.auth-error-modal-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.auth-error-modal-actions .btn {
+  flex: 1;
+  padding: 12px 20px;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+
+
+
+
+
+/* Dark theme support is handled by CSS variables in Variables.scss */
+
+/* Responsive design */
+@media (max-width: 480px) {
+  .auth-error-modal {
+    width: 95%;
+    margin: 20px;
+  }
+
+  .auth-error-modal-header {
+    padding: 16px 20px 12px;
+  }
+
+  .auth-error-modal-content {
+    padding: 20px;
+  }
+
+  .auth-error-modal-actions {
+    flex-direction: column;
+  }
+}
+
+

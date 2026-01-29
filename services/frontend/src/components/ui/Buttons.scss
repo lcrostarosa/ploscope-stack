@@ -1,0 +1,545 @@
+@use '../../styles/Variables' as *;
+
+// Shared button styles moved from duplicates.scss
+
+.btn-primary {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 6px;
+  background: var(--primary-color);
+  color: var(--text-primary);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: var(--primary-hover);
+  }
+  background-color: var(--hh-btn-primary);
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+  transform: translateY(-1px);
+}
+.btn-primary:disabled {
+  background: var(--gray-light-2);
+  cursor: not-allowed;
+  transform: none;
+}
+.btn-primary:hover {
+  background: var(--blue-hover);
+  background-color: var(--hh-btn-primary-hover);
+}
+
+.btn-secondary {
+  padding: 0.75rem 1.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: var(--bg-tertiary);
+  }
+  background-color: var(--hh-btn-secondary);
+}
+.btn-secondary:hover {
+  background: var(--gray-500);
+  transform: translateY(-1px);
+}
+
+.link-button {
+  background: none;
+  border: none;
+  color: var(--blue-primary);
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: inherit;
+  padding: 0;
+  margin: 0;
+  font-family: inherit;
+
+  &:hover:not(:disabled) {
+    color: var(--blue-hover);
+    text-decoration: none;
+  }
+
+  &:disabled {
+    color: var(--gray-600);
+    cursor: not-allowed;
+    text-decoration: none;
+  }
+}
+
+// =============================================================================
+// Common Action Button Styles
+// =============================================================================
+
+/* Base Randomize Button Styles */
+.randomize-btn {
+  background: var(--primary-color);
+  color: var(--text-primary);
+  border: 1px solid var(--primary-color);
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 20%;
+  justify-content: center;
+
+  &:hover {
+    background: var(--primary-hover);
+    border-color: var(--primary-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px var(--shadow-medium);
+  }
+
+  &:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(229, 57, 53, 0.1);
+  }
+
+  &:disabled {
+    background: var(--gray-600);
+    border-color: var(--gray-600);
+    color: var(--text-secondary);
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+
+    &:hover {
+      background: var(--gray-600);
+      border-color: var(--gray-600);
+      transform: none;
+      box-shadow: none;
+    }
+  }
+}
+
+/* Base Clear Button Styles */
+.clear-btn {
+  background: var(--gray-600);
+  color: var(--text-primary);
+  border: 1px solid var(--gray-600);
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 100px;
+  justify-content: center;
+
+  &:hover {
+    background: var(--gray-500);
+    border-color: var(--gray-500);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px var(--shadow-medium);
+  }
+
+  &:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(108, 117, 125, 0.1);
+  }
+
+  &:disabled {
+    background: var(--gray-400);
+    border-color: var(--gray-400);
+    color: var(--text-secondary);
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+
+    &:hover {
+      background: var(--gray-400);
+      border-color: var(--gray-400);
+      transform: none;
+      box-shadow: none;
+    }
+  }
+}
+
+/* Small button variants */
+.randomize-btn.small,
+.clear-btn.small {
+  padding: 0.4rem 0.8rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  min-width: 80px;
+}
+
+// =============================================================================
+// Split Button Styles
+// =============================================================================
+
+/* Split Button Container */
+.split {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.split-group {
+  position: relative;
+  display: inline-block;
+}
+
+.split-trigger {
+  background: var(--primary-color);
+  color: var(--text-primary);
+  border: 1px solid var(--primary-color);
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 100px;
+  justify-content: center;
+
+  &:hover {
+    background: var(--primary-hover);
+    border-color: var(--primary-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px var(--shadow-medium);
+  }
+
+  &:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(229, 57, 53, 0.1);
+  }
+}
+
+.split-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px var(--shadow-medium);
+  z-index: 1000;
+  min-width: 120px;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-10px);
+  transition: all 0.2s ease;
+  margin-top: 0.25rem;
+}
+
+.split-group:hover .split-menu {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.split-menu button {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  padding: 0.75rem 1rem;
+  text-align: left;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: background-color 0.2s ease;
+  border-radius: 0;
+
+  &:first-child {
+    border-radius: 6px 6px 0 0;
+  }
+
+  &:last-child {
+    border-radius: 0 0 6px 6px;
+  }
+
+  &:only-child {
+    border-radius: 6px;
+  }
+
+  &:hover {
+    background: var(--bg-tertiary);
+    color: var(--primary-color);
+  }
+
+  &:focus {
+    outline: none;
+    background: var(--bg-tertiary);
+    color: var(--primary-color);
+  }
+}
+
+// =============================================================================
+// Visually Hidden Elements
+// =============================================================================
+
+.visually-hidden-test-buttons {
+  position: absolute;
+  left: -9999px;
+  top: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+// =============================================================================
+// Toggle Folded Button Styles
+// =============================================================================
+
+/* Base Toggle Folded Button */
+.toggle-folded-btn {
+  padding: 0.4rem 0.8rem;
+  font-size: 0.85rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 80px;
+  justify-content: center;
+  font-weight: 500;
+
+  &:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px var(--shadow-medium);
+  }
+
+  &:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(229, 57, 53, 0.1);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
+
+  /* Small variant */
+  &.small {
+    padding: 0.3rem 0.6rem;
+    font-size: 0.8rem;
+    min-width: 60px;
+  }
+
+  /* Fold state - warning colors */
+  &.fold {
+    border-color: var(--warning-color);
+    color: var(--warning-color);
+    background-color: var(--warning-600);
+
+    &:hover:not(:disabled) {
+      border-color: var(--warning-color);
+      color: var(--warning-color);
+      background-color: var(--warning-600);
+    }
+  }
+
+  /* Reactivate state - success colors */
+  &.reactivate {
+    border-color: var(--success-color);
+    color: var(--success-color);
+    background-color: var(--solver-green-hover);
+
+    &:hover:not(:disabled) {
+      border-color: var(--success-color);
+      color: var(--success-color);
+      background-color: var(--solver-green-hover);
+    }
+  }
+}
+
+// =============================================================================
+// Opponent Action Button Styles
+// =============================================================================
+
+/* Randomize Opponent Button */
+.randomize-opponent-btn {
+  padding: 0.4rem 0.8rem;
+  font-size: 0.85rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 80px;
+  justify-content: center;
+  font-weight: 500;
+
+  &:hover:not(:disabled) {
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+    background-color: var(--purple-dark);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px var(--shadow-medium);
+  }
+
+  &:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(229, 57, 53, 0.1);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
+}
+
+/* Clear Opponent Button */
+.clear-opponent-btn {
+  padding: 0.4rem 0.8rem;
+  font-size: 0.85rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 80px;
+  justify-content: center;
+  font-weight: 500;
+
+  &:hover:not(:disabled) {
+    border-color: var(--danger-color);
+    color: var(--danger-color);
+    background-color: var(--error-dark);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px var(--shadow-medium);
+  }
+
+  &:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(220, 53, 69, 0.1);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
+}
+
+/* Remove Opponent Button */
+.remove-opponent-btn {
+  padding: 0.4rem 0.8rem;
+  font-size: 0.85rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 80px;
+  justify-content: center;
+  font-weight: 500;
+
+  &:hover:not(:disabled) {
+    border-color: var(--danger-color);
+    color: var(--danger-color);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px var(--shadow-medium);
+  }
+
+  &:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(220, 53, 69, 0.1);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
+}
+
+// =============================================================================
+// Job Panel Toggle Button Styles
+// =============================================================================
+
+/* Toggle Job Panel Button */
+.toggle-job-panel-btn {
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-tertiary); // Darker background
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 120px;
+  justify-content: center;
+  font-weight: 500;
+
+  &:hover:not(:disabled) {
+    background: var(--bg-secondary);
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px var(--shadow-medium);
+  }
+
+  &:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(229, 57, 53, 0.1);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
+
+  /* Secondary variant */
+  &.secondary {
+    background: var(--bg-secondary); // Even darker for secondary variant
+    border-color: var(--border-light);
+
+    &:hover:not(:disabled) {
+      background: var(--bg-primary);
+      border-color: var(--primary-color);
+      color: var(--primary-color);
+    }
+  }
+}
+
+

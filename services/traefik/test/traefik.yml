@@ -1,0 +1,35 @@
+# Test Environment Traefik configuration
+entryPoints:
+  web:
+    address: ":80"
+  websecure:
+    address: ":443"
+  metrics:
+    address: ":8082"
+
+providers:
+  file:
+    filename: /etc/traefik/dynamic.yml
+    watch: true
+
+api:
+  dashboard: true
+  insecure: true
+
+log:
+  level: INFO
+
+metrics:
+  prometheus:
+    entryPoint: metrics
+    addEntryPointsLabels: true
+    addServicesLabels: true
+    buckets:
+      - 0.1
+      - 0.3
+      - 1.2
+      - 5.0
+
+tracing:
+  serviceName: plosolver-traefik
+  sampleRate: 1.0 

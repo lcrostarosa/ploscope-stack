@@ -1,0 +1,210 @@
+name: Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      branch_or_pr:
+        description: 'Branch or PR number to deploy from (e.g., "feature/new-feature" or "123" for PR #123)'
+        required: false
+        type: string
+      tag:
+        description: 'Image tag to deploy (production requires a specific tag, staging defaults to branch name)'
+        required: false
+        type: string
+      force_deploy:
+        description: 'Force deployment even if no changes'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  actions: write
+  deployments: write
+  checks: write
+  packages: write
+  pages: write
+  discussions: write
+
+env:
+  REGISTRY: docker.io
+  IMAGE_NAME: ploscope
+
+jobs:
+  deploy:
+    name: Deploy (Staging/Production)
+    runs-on: ${{ vars.GHA_RUNNER }}
+    timeout-minutes: 5
+    environment: ${{ github.event.inputs.environment }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.inputs.branch_or_pr || 'master' }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate branch for production
+        if: github.event.inputs.environment == 'production'
+        run: |
+          BRANCH="${{ github.event.inputs.branch_or_pr || 'master' }}"
+          if [ "$BRANCH" != "master" ]; then
+            echo "❌ Production deployments can only be made from the 'master' branch"
+            echo "Current branch: $BRANCH"
+            exit 1
+          fi
+          echo "✅ Production deployment validated - using master branch"
+
+      - name: Validate required secrets
+        run: |
+          if [ -z "${{ secrets.SSH_PRIVATE_KEY }}" ]; then echo "Missing required secret: SSH_PRIVATE_KEY"; exit 1; fi
+          if [ -z "${{ secrets.SSH_HOST }}" ]; then echo "Missing required secret: SSH_HOST"; exit 1; fi
+          if [ -z "${{ secrets.SSH_USER }}" ]; then echo "Missing required secret: SSH_USER"; exit 1; fi
+          if [ -z "${{ secrets.APP_PATH }}" ]; then echo "Missing required secret: APP_PATH"; exit 1; fi
+
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Add server to known hosts
+        run: |
+          ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Determine version and branch
+        id: version
+        run: |
+          ENVIRONMENT="${{ github.event.inputs.environment }}"
+          BRANCH_OR_PR="${{ github.event.inputs.branch_or_pr || 'master' }}"
+          MANUAL_TAG="${{ github.event.inputs.tag }}"
+
+          if [ "$ENVIRONMENT" = "production" ]; then
+            if [ -z "$MANUAL_TAG" ]; then
+              echo "For production deployments, you must provide the image tag via the 'tag' input (e.g., 1.2.3)."
+              exit 1
+            fi
+            echo "TAG=$MANUAL_TAG" >> $GITHUB_OUTPUT
+            echo "DEPLOY_BRANCH=master" >> $GITHUB_OUTPUT
+          else
+            # Staging deployment
+            if [ -n "$MANUAL_TAG" ]; then
+              # Manual tag provided
+              echo "TAG=$MANUAL_TAG" >> $GITHUB_OUTPUT
+              echo "DEPLOY_BRANCH=$BRANCH_OR_PR" >> $GITHUB_OUTPUT
+            else
+              # Default to branch name as tag
+              echo "TAG=$BRANCH_OR_PR" >> $GITHUB_OUTPUT
+              echo "DEPLOY_BRANCH=$BRANCH_OR_PR" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+          echo "Using tag: ${{ steps.version.outputs.TAG }}"
+          echo "Deploying from branch: ${{ steps.version.outputs.DEPLOY_BRANCH }}"
+
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          timeout: 300s
+          allenvs: true
+          script: |
+            TAG="${{ steps.version.outputs.TAG }}"
+            BRANCH="${{ steps.version.outputs.DEPLOY_BRANCH }}"
+            HOST="${{ secrets.SSH_HOST }}"
+            USER="${{ secrets.SSH_USER }}"
+            APP_PATH="${{ secrets.APP_PATH }}"
+
+            echo "🚀 Starting frontend deployment..."
+            echo "📦 Tag: $TAG"
+            echo "🌿 Branch: ${BRANCH}"
+
+            set -e
+
+            mkdir -p ~/ploscope
+
+            export ENVIRONMENT=${{ github.event.inputs.environment }}
+            export FRONTEND_TAG=${TAG}
+            export FRONTEND_URL=${{ vars.FRONTEND_URL }}
+            export NODE_ENV=${{ vars.NODE_ENV }}
+            export REACT_APP_API_URL=${{ vars.REACT_APP_API_URL }}
+            export REACT_APP_ENABLE_CLARITY=${{ vars.REACT_APP_ENABLE_CLARITY }}
+            export REACT_APP_ENABLE_GA=${{ vars.REACT_APP_ENABLE_GA }}
+            export REACT_APP_GA_MEASUREMENT_ID=${{ vars.REACT_APP_GA_MEASUREMENT_ID }}
+            export REACT_APP_META_PIXEL_ID=${{ vars.REACT_APP_META_PIXEL_ID }}
+            export WEBSOCKET_CORS_ORIGINS=${{ vars.WEBSOCKET_CORS_ORIGINS }}
+            export REACT_APP_FEATURE_TRAINING_MODE_ENABLED=${{ vars.REACT_APP_FEATURE_TRAINING_MODE_ENABLED }}
+            export REACT_APP_FEATURE_TOURNAMENT_MODE_ENABLED=${{ vars.REACT_APP_FEATURE_TOURNAMENT_MODE_ENABLED }}
+            export REACT_APP_FEATURE_SOLVER_MODE_ENABLED=${{ vars.REACT_APP_FEATURE_SOLVER_MODE_ENABLED }}
+            export REACT_APP_FEATURE_SOCIAL_LOGIN_ENABLED=${{ vars.REACT_APP_FEATURE_SOCIAL_LOGIN_ENABLED }}
+            export REACT_APP_FEATURE_PLAYER_PROFILES_ENABLED=${{ vars.REACT_APP_FEATURE_PLAYER_PROFILES_ENABLED }}
+            export REACT_APP_FEATURE_HAND_HISTORY_ANALYZER_ENABLED=${{ vars.REACT_APP_FEATURE_HAND_HISTORY_ANALYZER_ENABLED }}
+            export REACT_APP_FEATURE_CUSTOM_MODE_ENABLED=${{ vars.REACT_APP_FEATURE_CUSTOM_MODE_ENABLED }}
+
+            # Check if the Docker network 'plo-network-cloud' exists, create if not
+            if ! docker network inspect plo-network-cloud >/dev/null 2>&1; then
+              echo "🔗 Creating Docker network plo-network-cloud with subnet 172.30.1.0/24..."
+              docker network create --subnet=172.30.1.0/24 plo-network-cloud
+            else
+              echo "🔗 Docker network plo-network-cloud already exists."
+            fi
+
+            if [ ! -d "$HOME/ploscope/frontend/.git" ]; then
+              echo "📥 Repository doesn't exist, cloning..."
+              cd ~/ploscope
+              git clone git@github.com:ploscope/frontend.git frontend
+              cd frontend
+              git fetch --prune --tags origin
+              git checkout ${BRANCH}
+              git pull origin ${BRANCH}
+            else
+              echo "📂 Repository exists, pulling latest changes..."
+              cd ~/ploscope/frontend
+              git fetch --prune --tags origin
+              git checkout ${BRANCH}
+              git pull origin ${BRANCH}
+            fi
+
+            echo "🔧 Logging into Docker registry..."
+            docker login -u ${{ secrets.DOCKERHUB_USERNAME }} -p ${{ secrets.DOCKERHUB_TOKEN }} docker.io
+
+            echo "🔧 Starting Docker Compose..."
+            FRONTEND_TAG="${TAG}" docker compose pull
+            FRONTEND_TAG="${TAG}" docker compose up -d
+
+
+            # Wait for the frontend container to become healthy before exiting
+            echo "⏳ Waiting for frontend container to become healthy..."
+
+            CONTAINER_NAME="frontend-${ENVIRONMENT}"
+            for i in {1..30}; do
+              STATUS=$(docker inspect --format='{{.State.Health.Status}}' "$CONTAINER_NAME" 2>/dev/null || echo "notfound")
+              if [ "$STATUS" = "healthy" ]; then
+                echo "✅ $CONTAINER_NAME container is healthy."
+                break
+              elif [ "$STATUS" = "unhealthy" ]; then
+                echo "❌ $CONTAINER_NAME container is unhealthy."
+                exit 1
+              elif [ "$STATUS" = "notfound" ]; then
+                echo "❌ $CONTAINER_NAME container is not found."
+                exit 1
+              else
+                echo "⏳ Waiting for health status... (current: $STATUS)"
+              fi
+
+              sleep 1
+              if [ $i -eq 30 ]; then
+                echo "❌ Timeout waiting for frontend container to become healthy."
+                exit 1
+              fi
+            done

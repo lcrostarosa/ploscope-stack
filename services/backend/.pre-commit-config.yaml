@@ -1,0 +1,62 @@
+# Pre-commit configuration
+# Configure pre-commit to use public PyPI for its own dependencies
+default_language_version:
+  python: python3
+
+# Use public PyPI for pre-commit's own dependencies
+repos:
+  # Python code formatting
+  - repo: https://github.com/psf/black
+    rev: 23.12.1
+    hooks:
+      - id: black
+        language_version: python3
+        args: [--line-length=120]
+        additional_dependencies: []
+
+  # Import sorting
+  - repo: https://github.com/pycqa/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        args: [--profile=black, --line-length=120]
+        additional_dependencies: []
+
+  # Docker Compose build for staging
+  # - repo: local
+  #   hooks:
+  #     - id: docker-compose-build-staging
+  #       name: docker-compose-build-staging
+  #       entry: docker-compose
+  #       language: system
+  #       pass_filenames: false
+  #       always_run: true
+  #       args: [-f, docker-compose.cloud.yml, build]
+  #       stages: [commit]
+
+  # Unit tests
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest
+        entry: poetry run pytest
+        language: system
+        pass_filenames: false
+        always_run: true
+        args: [tests/unit/, --tb=short, -q]
+        stages: [commit]
+
+  # General file checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: check-added-large-files
+      - id: check-ast
+      - id: check-json
+      - id: check-toml
+      - id: debug-statements
+      - id: trailing-whitespace
+      - id: check-docstring-first
+      - id: check-case-conflict

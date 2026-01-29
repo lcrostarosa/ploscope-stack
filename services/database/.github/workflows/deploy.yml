@@ -1,0 +1,167 @@
+---
+# It is triggered by a release being published to the GitHub repository.
+# The workflow will deploy the database migrations to the production server.
+# The workflow will also deploy the database migrations to the staging server.
+# The workflow will also deploy the database migrations to the development server.
+# The workflow will also deploy the database migrations to the local development server.
+# The workflow will also deploy the database migrations to the local development server.
+name: Deploy db-init
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Docker image tag (e.g., v1.2.3)
+        required: true
+      environment:
+        description: Environment to deploy to (e.g., staging, production)
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - production
+
+  release:
+    types: [published]
+
+jobs:
+  deploy:
+    runs-on: ${{ vars.GHA_RUNNER }}
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Resolve inputs
+        id: vars
+        run: |
+          echo "TAG=${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}" >> $GITHUB_OUTPUT
+          echo "HOST=${{ secrets.DEPLOY_HOST }}" >> $GITHUB_OUTPUT
+          echo "USER=${{ secrets.DEPLOY_USER }}" >> $GITHUB_OUTPUT
+
+      - name: Validate production deployment source
+        if: inputs.environment == 'production'
+        run: |
+          # Only allow production deploys from master branch and production tags (v*.*.*)
+          if [[ "${GITHUB_REF}" != "refs/heads/master" && "${GITHUB_REF}" != refs/tags/v* ]]; then
+            echo "Production deployment is only allowed from the master branch or production tags (v*.*.*)."
+            exit 1
+          fi
+
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          timeout: 300s
+          allenvs: true
+          script: |
+            set -e
+
+            export APP_NAME="database"
+            export ENVIRONMENT="${{ inputs.environment }}"
+            export VERSION="${{ github.sha }}"
+            export DATABASE_URL="${{ secrets.DATABASE_URL }}"
+            export POSTGRES_DB="${{ secrets.POSTGRES_DB }}"
+            export POSTGRES_USER="${{ secrets.POSTGRES_USER }}"
+            export POSTGRES_PASSWORD="${{ secrets.POSTGRES_PASSWORD }}"
+            export POSTGRES_HOST="${{ secrets.POSTGRES_HOST }}"
+            export POSTGRES_MIGRATE_HOST="${{secrets.POSTGRES_HOST }}"
+            export PGPASSWORD="${{ secrets.POSTGRES_PASSWORD }}"
+            export SCHEMA_USER="${{ secrets.SCHEMA_USER }}"
+            export SCHEMA_PASSWORD="${{ secrets.SCHEMA_PASSWORD }}"
+            export POSTGRES_SCHEMA_USER="${{ secrets.POSTGRES_SCHEMA_USER }}"
+            export POSTGRES_SCHEMA_PASSWORD="${{ secrets.POSTGRES_SCHEMA_PASSWORD }}"
+            export POSTGRES_DATA_PATH="${{ vars.POSTGRES_DATA_PATH }}"
+            export POSTGRES_BACKUP_PATH="${{ vars.POSTGRES_BACKUP_PATH }}"
+            export DB_INIT_TAG="${{ inputs.environment }}"
+
+            export REF_NAME="${{ github.ref_name }}"
+            export REF_TYPE="${{ github.ref_type }}"
+
+            mkdir -p ~/ploscope
+
+            # Check if the Docker network 'plo-network-cloud' exists, create if not
+            if ! docker network inspect plo-network-cloud >/dev/null 2>&1; then
+              echo "🔗 Creating Docker network plo-network-cloud with subnet 172.30.1.0/24..."
+              docker network create --subnet=172.30.1.0/24 plo-network-cloud
+            else
+              echo "🔗 Docker network plo-network-cloud already exists."
+            fi
+
+            if [ ! -d "$HOME/ploscope/$APP_NAME/.git" ]; then
+              echo "📥 Repository doesn't exist, cloning..."
+              cd ~/ploscope
+              git clone git@github.com:ploscope/$APP_NAME.git
+              cd $APP_NAME
+              git fetch --prune --tags origin
+              if [ "$REF_TYPE" = "tag" ]; then
+                git checkout -f "tags/$REF_NAME"
+              else
+                git checkout -B "$REF_NAME" "origin/$REF_NAME"
+              fi
+            else
+              echo "📂 Repository exists, pulling latest changes..."
+              cd ~/ploscope/$APP_NAME
+              git fetch --prune --tags origin
+              if [ "$REF_TYPE" = "tag" ]; then
+                git checkout -f "tags/$REF_NAME"
+              else
+                git checkout -B "$REF_NAME" "origin/$REF_NAME"
+              fi
+            fi
+
+            echo "🔧 Starting Docker Compose..."
+            echo "🔍 Environment variables:"
+            echo "  POSTGRES_DB: $POSTGRES_DB"
+            echo "  POSTGRES_USER: $POSTGRES_USER"
+            echo "  POSTGRES_HOST: $POSTGRES_HOST"
+            echo "  DB_INIT_TAG: $DB_INIT_TAG"
+            echo "  ENVIRONMENT: $ENVIRONMENT"
+
+            docker compose up -d
+
+            echo "🔍 Container status after startup:"
+            docker ps -a
+            echo "🔍 Database container logs:"
+            docker logs db-$ENVIRONMENT --tail 20 || echo "Could not retrieve logs yet"
+
+            echo "🔍 Testing database connection..."
+            sleep 10  # Give database time to fully start
+            docker exec db-$ENVIRONMENT pg_isready -U postgres || echo "Database not ready yet"
+
+            echo "🔍 Checking database users..."
+            docker exec db-$ENVIRONMENT psql -U postgres -d $POSTGRES_DB -c "\du" || echo "Could not list users yet"
+
+            # Wait for the database container to become healthy before exiting
+            echo "⏳ Waiting for database container to become healthy..."
+
+            for i in {1..30}; do
+              STATUS=$(docker inspect --format='{{.State.Health.Status}}' db-${{ inputs.environment }} 2>/dev/null || echo "notfound")
+              if [ "$STATUS" = "healthy" ]; then
+                echo "✅ database container is healthy."
+                break
+              elif [ "$STATUS" = "unhealthy" ]; then
+                echo "❌ database container is unhealthy."
+                echo "📋 Container logs:"
+                docker logs db-${{ inputs.environment }} --tail 50 || echo "Could not retrieve logs"
+                exit 1
+              elif [ "$STATUS" = "notfound" ]; then
+                echo "❌ database container is not found."
+                echo "📋 Available containers:"
+                docker ps -a || echo "Could not list containers"
+                exit 1
+              else
+                echo "⏳ Waiting for health status... (current: $STATUS)"
+              fi
+
+              sleep 1
+              if [ $i -eq 30 ]; then
+                echo "❌ Timeout waiting for database container to become healthy."
+                echo "📋 Container logs:"
+                docker logs db-${{ inputs.environment }} --tail 50 || echo "Could not retrieve logs"
+                echo "📋 Container health details:"
+                docker inspect db-${{ inputs.environment }} --format='{{.State.Health}}' || echo "Could not inspect container"
+                exit 1
+              fi
+            done

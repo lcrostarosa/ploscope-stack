@@ -1,0 +1,73 @@
+version: '3.8'
+
+services:
+  nexus:
+    image: sonatype/nexus3:latest
+    container_name: nexus
+    ports:
+      - "8081:8081"
+    environment:
+      - NEXUS_URL=http://localhost:8081
+      - NEXUS_ADMIN_USER=admin
+      - NEXUS_ADMIN_PASSWORD=${NEXUS_ADMIN_PASSWORD}
+      - NEXUS_PYPI_PASSWORD=${NEXUS_PYPI_PASSWORD}
+      - NEXUS_NPM_PASSWORD=${NEXUS_NPM_PASSWORD}
+      - REPOSITORY_NAME=pypi-internal
+      - REPOSITORY_GROUP_NAME=pypi-all
+      - NPM_REPOSITORY_NAME=npm-internal
+      - NPM_REPOSITORY_GROUP_NAME=npm-all
+      - NEXUS_DOMAIN=nexus.ploscope.com
+      - NEXUS_HTTP_PORT=8081
+      - BUILD_ENV=production
+      - RESTART_POLICY=unless-stopped
+      - VOLUME_MODE=rw
+      - NEXUS_SECURITY_RANDOMPASSWORD=false
+      - NEXUS_CONTEXT=/
+      - NEXUS_LOG_LEVEL=DEBUG
+      - NEXUS_LOG_FILE=/opt/sonatype/nexus/logs/nexus.log
+      - NEXUS_DATA_PATH=/nexus-data
+      - NEXUS_BLOB_STORE=default
+      - NEXUS_MAX_THREADS=200
+      - NEXUS_CONNECTION_TIMEOUT=20000
+      - NEXUS_MAX_IDLE_TIME=30000
+      - PYPI_PROXY_URL=https://pypi.org/
+      - PYPI_CONTENT_MAX_AGE=1440
+      - PYPI_METADATA_MAX_AGE=1440
+      - PYPI_NEGATIVE_CACHE_TTL=1440
+      - NPM_PROXY_URL=https://registry.npmjs.org/
+      - NPM_CONTENT_MAX_AGE=1440
+      - NPM_METADATA_MAX_AGE=1440
+      - NPM_NEGATIVE_CACHE_TTL=1440
+      - NEXUS_USER_AGENT_SUFFIX=PLOScope-Production
+      - NEXUS_HEALTH_CHECK_INTERVAL=10s
+      - NEXUS_HEALTH_CHECK_TIMEOUT=5s
+      - NEXUS_HEALTH_CHECK_RETRIES=5
+      - NEXUS_HEALTH_CHECK_START_PERIOD=60s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.nexus.rule=Host(`nexus.ploscope.com`)"
+      - "traefik.http.routers.nexus.entrypoints=websecure"
+      - "traefik.http.routers.nexus.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.nexus.middlewares=cors-headers"
+      - "traefik.http.services.nexus.loadbalancer.server.port=8081"
+      - "traefik.docker.network=plo-network-cloud"
+    volumes:
+      - nexus_data:/opt/sonatype/sonatype-work/nexus3
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/service/rest/v1/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    restart: unless-stopped
+    networks:
+      - plo-network-cloud
+
+networks:
+  plo-network-cloud:
+    external: true
+    name: plo-network-cloud
+
+volumes:
+  nexus_data:
+    driver: local

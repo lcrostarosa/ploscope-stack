@@ -1,0 +1,536 @@
+@use '../../../styles/Variables' as *;
+@use '../../ui/Card.scss' as *;
+
+.seat {
+  filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.35));
+  z-index: 11;
+  border-radius: 12px;
+  position: relative;
+
+  /* Increase z-index when stats overlay is visible or bet input is shown */
+  &:has(.stats-visible),
+  &:has(.bet-input) {
+    z-index: 9999 !important;
+  }
+
+  &.removed-seat {
+    filter: none;
+  }
+}
+
+.remove-seat-btn {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background: rgba(244, 67, 54, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 14px;
+  z-index: 100;
+  transition: all 0.2s ease;
+  padding: 0;
+
+  &:hover {
+    background: rgba(244, 67, 54, 1);
+    transform: scale(1.1);
+    box-shadow: 0 2px 8px rgba(244, 67, 54, 0.5);
+  }
+
+  @media (max-width: 768px) {
+    width: 20px;
+    height: 20px;
+    font-size: 12px;
+    top: -6px;
+    right: -6px;
+  }
+}
+
+.add-back-seat-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 80px;
+}
+
+.add-back-seat-btn {
+  background: rgba(76, 175, 80, 0.2);
+  border: 2px dashed rgba(76, 175, 80, 0.5);
+  border-radius: 8px;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  .add-icon {
+    font-size: 20px;
+  }
+
+  .add-text {
+    font-size: 11px;
+    color: var(--text-secondary);
+    font-weight: 600;
+  }
+
+  &:hover {
+    background: rgba(76, 175, 80, 0.3);
+    border-color: rgba(76, 175, 80, 0.8);
+    transform: scale(1.05);
+    
+    .add-text {
+      color: var(--text-primary);
+    }
+  }
+
+  @media (max-width: 768px) {
+    padding: 8px 12px;
+    
+    .add-icon {
+      font-size: 16px;
+    }
+    
+    .add-text {
+      font-size: 9px;
+    }
+  }
+}
+
+.player-chips {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: rgba(0, 0, 0, 0.75);
+  border: 2px solid #ffd700;
+  border-radius: 8px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3), 0 0 12px rgba(255, 215, 0, 0.3);
+  z-index: 5;
+  animation: chipAppear 0.3s ease-out;
+  
+  .chips-icon {
+    font-size: 16px;
+    line-height: 1;
+  }
+  
+  .chips-amount {
+    font-size: 12px;
+    font-weight: bold;
+    color: #ffd700;
+    white-space: nowrap;
+    
+    &::after {
+      content: ' BB';
+      font-size: 10px;
+      opacity: 0.9;
+    }
+  }
+
+  @media (max-width: 768px) {
+    padding: 3px 6px;
+    gap: 3px;
+    
+    .chips-icon {
+      font-size: 14px;
+    }
+    
+    .chips-amount {
+      font-size: 10px;
+      
+      &::after {
+        font-size: 8px;
+      }
+    }
+  }
+}
+
+@keyframes chipAppear {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Chip positioning for each seat */
+.seat-0 .player-chips {
+  bottom: -35px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.seat-1 .player-chips {
+  bottom: -30px;
+  left: -20px;
+}
+
+.seat-2 .player-chips {
+  top: 50%;
+  left: -60px;
+  transform: translateY(-50%);
+}
+
+.seat-3 .player-chips {
+  top: -30px;
+  right: -20px;
+}
+
+.seat-4 .player-chips {
+  top: -35px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.seat-5 .player-chips {
+  top: -30px;
+  left: -20px;
+}
+
+.seat-6 .player-chips {
+  top: 50%;
+  right: -60px;
+  transform: translateY(-50%);
+}
+
+.seat-7 .player-chips {
+  bottom: -30px;
+  right: -20px;
+}
+
+/* Mobile chip positioning */
+@media (max-width: 768px) {
+  .seat-0 .player-chips {
+    bottom: -28px;
+  }
+  
+  .seat-1 .player-chips,
+  .seat-7 .player-chips {
+    bottom: -25px;
+  }
+  
+  .seat-2 .player-chips {
+    left: -45px;
+  }
+  
+  .seat-3 .player-chips,
+  .seat-5 .player-chips {
+    top: -25px;
+  }
+  
+  .seat-4 .player-chips {
+    top: -28px;
+  }
+  
+  .seat-6 .player-chips {
+    right: -45px;
+  }
+}
+
+.seat-2,
+.seat-6 {
+  z-index: 20;
+}
+
+.active-seat {
+  box-shadow: 0 0 0 4px var(--red-primary), 0 0 18px rgba(229, 57, 53, 0.6);
+}
+
+.player-card {
+  width: clamp(118px, 16vw, 200px);
+  padding: 8px;
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.35);
+  z-index: 20;
+  position: relative;
+
+  /* Mobile: More compact player cards */
+  @media (max-width: 768px) {
+    width: clamp(84px, 20vw, 128px);
+    padding: 6px;
+    border-radius: 8px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.35);
+  }
+
+  &.active-player {
+    background-color: var(--bg-primary);
+    border: 3px solid var(--success-color);
+    box-shadow: 0 4px 10px rgba(76, 175, 80, 0.3);
+  }
+
+  &.folded-player {
+    background-color: var(--player-card-folded);
+    opacity: 0.6;
+  }
+
+  &.all-in-player {
+    background-color: var(--player-card-allin);
+    border: 2px solid var(--red-primary);
+    box-shadow: 0 4px 10px rgba(255, 152, 0, 0.3);
+  }
+
+  .cards {
+    display: flex;
+    gap: clamp(1px, 0.3vw, 2px);
+    flex-wrap: nowrap !important;
+    justify-content: center;
+    max-width: 100%;
+    overflow: hidden;
+
+    .card {
+      margin-left: clamp(-6px, -1.5vw, -8px);
+      flex-shrink: 1;
+    }
+
+    /* Mobile: Tighter card spacing */
+    @media (max-width: 768px) {
+      gap: clamp(0.5px, 0.2vw, 1px);
+
+      .card {
+        margin-left: clamp(-4px, -1.2vw, -6px);
+      }
+    }
+  }
+
+  .cards-hidden {
+    display: flex;
+    gap: clamp(2px, 0.5vw, 4px);
+    flex-wrap: nowrap !important;
+    justify-content: center;
+    max-width: 100%;
+    overflow: hidden;
+
+    .hidden-card + .hidden-card {
+      margin-left: clamp(-8px, -2vw, -10px);
+    }
+
+    /* Mobile: Tighter hidden card spacing */
+    @media (max-width: 768px) {
+      gap: clamp(1px, 0.3vw, 2px);
+
+      .hidden-card + .hidden-card {
+        margin-left: clamp(-6px, -1.5vw, -8px);
+      }
+    }
+  }
+
+  /* Player header with stats button in top right */
+  .player-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+    position: relative;
+    min-height: 20px;
+
+    .stats-toggle-icon {
+      background: none;
+      border: none;
+      font-size: 16px;
+      cursor: pointer;
+      padding: 2px;
+      border-radius: 3px;
+      transition: background-color 0.2s ease;
+      margin-left: auto;
+      flex-shrink: 0;
+
+      &:hover {
+        background-color: var(--bg-tertiary);
+      }
+
+      /* Mobile: Smaller icon */
+      @media (max-width: 768px) {
+        font-size: 14px;
+      }
+    }
+
+    .dealer-button {
+      background: white;
+      color: var(--primary-color);
+      border-radius: 50%;
+      width: 20px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: bold;
+      border: 1px solid var(--primary-color);
+      position: absolute;
+      top: -8px;
+      left: -8px;
+      z-index: 10;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+
+      /* Mobile: Smaller dealer button */
+      @media (max-width: 768px) {
+        width: 16px;
+        height: 16px;
+        font-size: 10px;
+        top: -6px;
+        left: -6px;
+      }
+    }
+
+    .reveal-button {
+      background: none;
+      border: none;
+      font-size: 14px;
+      cursor: pointer;
+      padding: 2px;
+      border-radius: 3px;
+      transition: background-color 0.2s ease;
+      margin-right: 4px;
+
+      &:hover {
+        background-color: var(--bg-tertiary);
+      }
+
+      /* Mobile: Smaller reveal button */
+      @media (max-width: 768px) {
+        font-size: 12px;
+      }
+    }
+  }
+
+  /* Player info section (below cards) */
+  .player-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px solid var(--border-color);
+
+    .player-number {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-primary);
+      white-space: nowrap;
+
+      @media (max-width: 768px) {
+        font-size: 10px;
+      }
+    }
+
+    .chip-stack {
+      font-size: 12px;
+      color: var(--text-primary);
+      font-weight: 500;
+      white-space: nowrap;
+
+      @media (max-width: 768px) {
+        font-size: 10px;
+      }
+    }
+  }
+
+  /* Stats overlay - positioned absolutely below card */
+  .stats-overlay {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin-top: 8px;
+    z-index: 9999;
+    animation: slideDown 0.2s ease-out;
+
+    /* High z-index for bottom players too, ensuring stats always overlap everything */
+    &.stats-overlay-bottom {
+      z-index: 9999;
+    }
+  }
+
+  @keyframes slideDown {
+    from {
+      opacity: 0;
+      transform: translateY(-10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Stats close button */
+  .stats-close-btn {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    color: var(--text-primary);
+    padding: 0;
+    transition: all 0.2s ease;
+
+    &:hover {
+      background-color: var(--red-primary);
+      color: white;
+      border-color: var(--red-primary);
+    }
+
+    @media (max-width: 768px) {
+      width: 18px;
+      height: 18px;
+      font-size: 12px;
+    }
+  }
+
+  /* Stats content that shows when expanded */
+  .stats-content {
+    padding: 8px;
+    background-color: var(--bg-secondary);
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    position: relative;
+
+    .hand-strength {
+      font-size: 10px;
+      color: var(--text-secondary);
+      text-align: center;
+      margin-bottom: 2px;
+
+      /* Mobile: Even smaller text */
+      @media (max-width: 768px) {
+        font-size: 9px;
+      }
+    }
+
+    .invested {
+      font-size: 10px;
+      color: var(--text-secondary);
+      text-align: center;
+      margin-bottom: 2px;
+
+      /* Mobile: Even smaller text */
+      @media (max-width: 768px) {
+        font-size: 9px;
+      }
+    }
+  }
+
+  /* Player number moved to header - see .player-info styles above */
+}

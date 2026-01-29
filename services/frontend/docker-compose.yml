@@ -1,0 +1,372 @@
+
+version: '3.8'
+
+services:
+  # Frontend React Application
+  frontend:
+    image: ploscope/frontend:${FRONTEND_TAG:-staging}
+    platform: linux/amd64
+    container_name: frontend-${ENVIRONMENT}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NODE_ENV: production
+        REACT_APP_API_URL: /api
+        BUILDKIT_INLINE_CACHE: 1
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    networks:
+      plo-network-cloud:
+        ipv4_address: 172.30.1.12
+    volumes:
+      - shared-logs:/frontend/logs
+
+  backend:
+    image: ploscope/backend:${BACKEND_TAG:-staging}
+    platform: linux/amd64
+    profiles:
+      - localdev
+    container_name: backend-${ENVIRONMENT:-local}
+    labels:
+      - "traefik.enable=true"
+    ports:
+      - "5001:5001"
+    volumes:
+      - shared-logs:/app/logs
+    environment:
+      - FLASK_DEBUG=${FLASK_DEBUG:-false}
+      - FLASK_ENV=${FLASK_ENV:-staging}
+      - ENVIRONMENT=${ENVIRONMENT:-local}
+      - NODE_ENV=${NODE_ENV:-production}
+      - TESTING=${TESTING:-false}
+      # DB
+      - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres@db:5432/plosolver}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-plosolver}
+      - POSTGRES_HOST=${POSTGRES_HOST:-db}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      # RabbitMQ
+      - QUEUE_PROVIDER=rabbitmq
+      - SECRET_KEY=${SECRET_KEY:-secret-key}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-jwt-secret-key}
+      - RABBITMQ_HOST=${RABBITMQ_HOST:-rabbitmq}
+      - RABBITMQ_PORT=${RABBITMQ_PORT:-5672}
+      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-plosolver}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-dev_password_2024}
+      - RABBITMQ_VHOST=${RABBITMQ_VHOST:-/plosolver}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-your-google-client-id}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-your-google-client-secret}
+      - WEBSOCKET_CORS_ORIGINS=${WEBSOCKET_CORS_ORIGINS:-http://localhost:3001,http://127.0.0.1:3001,http://localhost,http://127.0.0.1,http://*.ngrok-free.app,https://ploscope.com,http://frontend}
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5001/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    networks:
+      - plo-network-cloud
+
+  backend-grpc:
+    image: ploscope/backend-grpc:${BACKEND_GRPC_TAG:-staging}
+    platform: linux/amd64
+    container_name: backend-grpc-${ENVIRONMENT:-local}
+    profiles:
+      - localdev
+    environment:
+      - FLASK_DEBUG=${FLASK_DEBUG:-false}
+      - FLASK_ENV=${FLASK_ENV:-staging}
+      - ENVIRONMENT=${ENVIRONMENT:-local}
+      - NODE_ENV=${NODE_ENV:-production}
+      - TESTING=${TESTING:-false}
+      # DB
+      - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres@db:5432/plosolver}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-plosolver}
+      - POSTGRES_HOST=${POSTGRES_HOST:-db}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      # RabbitMQ
+      - QUEUE_PROVIDER=rabbitmq
+      - SECRET_KEY=${SECRET_KEY:-secret-key}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-jwt-secret-key}
+      - RABBITMQ_HOST=${RABBITMQ_HOST:-rabbitmq}
+      - RABBITMQ_PORT=${RABBITMQ_PORT:-5672}
+      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-plosolver}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-dev_password_2024}
+      - RABBITMQ_VHOST=${RABBITMQ_VHOST:-/plosolver}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-your-google-client-id}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-your-google-client-secret}
+      - WEBSOCKET_CORS_ORIGINS=${WEBSOCKET_CORS_ORIGINS:-http://localhost:3001,http://127.0.0.1:3001,http://localhost,http://127.0.0.1,http://*.ngrok-free.app,https://ploscope.com,http://frontend}
+      - HOST=0.0.0.0
+      - GRPC_PORT=50051
+    command: ["python", "-m", "src.backend.grpc_main"]
+    ports:
+      - "50051:50051"
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 50051"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - plo-network-cloud
+
+  celeryworker:
+    image: ploscope/celery-worker:master
+    platform: linux/amd64
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    profiles:
+      - localdev
+    container_name: ploscope-celeryworker-localdev
+    environment:
+      - LOG_LEVEL=DEBUG
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/plosolver
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=plosolver
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - SECRET_KEY=dev-secret-key-change-in-production
+      - RABBITMQ_VHOST=/plosolver
+      - RABBITMQ_USERNAME=plosolver
+      - RABBITMQ_PASSWORD=dev_password_2024
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_SPOT_QUEUE=spot-processing
+      - RABBITMQ_SOLVER_QUEUE=solver-processing
+      - RABBITMQ_SPOT_DLQ=spot-processing-dlq
+      - RABBITMQ_SOLVER_DLQ=solver-processing-dlq
+      - CELERY_BROKER_URL=amqp://plosolver:dev_password_2024@rabbitmq:5672/%2Fplosolver
+      - CELERY_RESULT_BACKEND=redis://:dev_redis_password_2024@redis:6379/0
+      - CELERY_TASK_SERIALIZER=json
+      - CELERY_RESULT_SERIALIZER=json
+      - CELERY_ACCEPT_CONTENT=['json']
+      - CELERY_TIMEZONE=UTC
+      - CELERY_ENABLE_UTC=True
+      - CELERY_TASK_TRACK_STARTED=True
+      - CELERY_TASK_TIME_LIMIT=30*60
+      - CELERY_TASK_SOFT_TIME_LIMIT=25*60
+      - CELERY_WORKER_PREFETCH_MULTIPLIER=1
+      - CELERY_WORKER_MAX_TASKS_PER_CHILD=1000
+      - CELERY_WORKER_CONCURRENCY=4
+      - CELERY_HEALTH_PORT=5002
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - REDIS_PASSWORD=dev_redis_password_2024
+      - REDIS_URL=redis://:dev_redis_password_2024@redis:6379/0
+      - BUILD_ENV=development
+      - RESTART_POLICY=unless-stopped
+      - VOLUME_MODE=rw
+      - PGPASSWORD=postgres
+    volumes:
+      - .:/app/celery-worker
+      - ./logs:/app/logs
+    networks:
+      - plo-network-cloud
+    healthcheck:
+      test: ["CMD", "/app/health_check.sh"]
+      interval: 10s
+      timeout: 15s
+      retries: 5
+      start_period: 20s
+
+  db:
+    profiles:
+      - localdev
+    image: postgres:15-alpine
+    container_name: ploscope-postgres-localdev
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=plosolver
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - plo-network-cloud
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d plosolver || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  rabbitmq-init:
+    platform: linux/amd64
+
+    profiles:
+      - localdev
+    image: ploscope/rabbitmq-init:staging
+    container_name: rabbitmq-init-${ENVIRONMENT:-local}
+    environment:
+      - RABBITMQ_HOST=${RABBITMQ_HOST:-rabbitmq}
+      - RABBITMQ_PORT=${RABBITMQ_PORT:-5672}
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USERNAME:-plosolver}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD:-dev_password_2024}
+      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-plosolver}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-dev_password_2024}
+      - RABBITMQ_VHOST=${RABBITMQ_VHOST:-/plosolver}
+      - RABBITMQ_SPOT_QUEUE=${RABBITMQ_SPOT_QUEUE:-plosolver_spot_queue}
+      - RABBITMQ_SOLVER_QUEUE=${RABBITMQ_SOLVER_QUEUE:-plosolver_solver_queue}
+      - RABBITMQ_SPOT_DLQ=${RABBITMQ_SPOT_DLQ:-plosolver_spot_dlq}
+      - RABBITMQ_SOLVER_DLQ=${RABBITMQ_SOLVER_DLQ:-plosolver_solver_dlq}
+      - POSTGRES_DB=${POSTGRES_DB:-plosolver}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_HOST=${POSTGRES_HOST:-db}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - TESTING=false
+      - CONTAINER_ENV=production
+      - LOG_LEVEL=INFO
+      - BUILD_ENV=production
+      - VOLUME_MODE=rw
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - plo-network-cloud
+
+  db-migrate:
+    platform: linux/amd64
+
+    profiles:
+      - localdev
+    image: ploscope/db-init:staging
+    container_name: db-migrate-${ENVIRONMENT:-local}
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres@db:5432/plosolver}
+      - POSTGRES_DB=${POSTGRES_DB:-plosolver}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - PGPASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_HOST=${POSTGRES_HOST:-db}
+      - POSTGRES_MIGRATE_HOST=${POSTGRES_MIGRATE_HOST:-db}
+      - SCHEMA_USER=${POSTGRES_USER}
+      - SCHEMA_PASSWORD=${SCHEMA_PASSWORD:-postgres}
+      - POSTGRES_SCHEMA_USER=${POSTGRES_SCHEMA_USER:-postgres}
+      - POSTGRES_SCHEMA_PASSWORD=${POSTGRES_SCHEMA_PASSWORD:-postgres}
+      - LOG_LEVEL=INFO
+      - BUILD_ENV=production
+      - RESTART_POLICY=always
+      - VOLUME_MODE=rwd
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: "no"
+    networks:
+      plo-network-cloud:
+        ipv4_address: 172.30.1.26
+
+  rabbitmq:
+    profiles:
+      - localdev
+    image: rabbitmq:3-management-alpine
+    container_name: ploscope-rabbitmq-localdev
+    environment:
+      - RABBITMQ_DEFAULT_USER=plosolver
+      - RABBITMQ_DEFAULT_PASS=dev_password_2024
+      - RABBITMQ_DEFAULT_VHOST=/plosolver
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - plo-network-cloud
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  grafana:
+    image: grafana/grafana:latest
+    platform: linux/amd64
+    profiles:
+      - localdev
+    container_name: grafana-${ENVIRONMENT:-local}
+    ports:
+      - "3006:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SERVER_HTTP_PORT=3000
+      - GF_SERVER_DOMAIN=localhost
+      - GF_LOG_LEVEL=info
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+    volumes:
+      - grafana-data:/var/lib/grafana
+    networks:
+      - plo-network-cloud
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: plosolver-redis-test
+    profiles:
+      - localdev
+    ports:
+      - "6379:6379"
+    environment:
+      - REDIS_PASSWORD=dev_redis_password_2024
+    networks:
+      - plo-network-cloud
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  shared-logs:
+    external: true
+  postgres-data:
+    external: true
+  rabbitmq-data:
+    external: true
+  grafana-data:
+    external: true
+
+networks:
+  plo-network-cloud:
+    external: true

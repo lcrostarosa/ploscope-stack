@@ -1,0 +1,202 @@
+---
+description: Relevant for when mechanics of the game are modified.  Use this to ensure that gameplay code adheres to the real rules of PLO bomb pots and standard PLO
+alwaysApply: false
+---
+# 🃏 Pot Limit Omaha (PLO) Double Board Bomb Pot Ruleset
+
+---
+
+## 🧱 Standard Pot Limit Omaha (PLO)
+
+### How It Works
+- Each player is dealt **4 hole cards**.
+- Betting follows **pot-limit rules**:
+  - Maximum bet is the current size of the pot after your call.
+- Players must build hands using **exactly 2 hole cards** and **exactly 3 community cards**.
+- The game plays with a single community board and standard betting rounds:
+  1. Preflop
+  2. Flop
+  3. Turn
+  4. River
+
+---
+
+### 🎮 Table Positions
+
+| Abbreviation | Name             | Description                             |
+|--------------|------------------|-----------------------------------------|
+| UTG          | Under the Gun    | First to act preflop                    |
+| HJ           | Hijack           | One seat before the cutoff              |
+| CO           | Cutoff           | One seat right of the button            |
+| BTN          | Button           | Dealer position, acts last postflop     |
+| SB           | Small Blind      | Posts ½ BB, acts first postflop         |
+| BB           | Big Blind        | Posts 1 BB, acts second postflop        |
+
+- In regular PLO, **preflop action** begins left of the BB.
+- Postflop action begins **left of the button** and proceeds clockwise.
+
+---
+
+## 💣 Bomb Pot Format (Double Board)
+
+### Overview
+A **bomb pot** skips the preflop betting round entirely:
+- Every player **antes** a set amount (e.g., 5 BB).
+- All players see the **flop**.
+- The game plays out across **two full community boards**.
+- Pot-limit betting begins **on the flop**.
+
+---
+
+### Bomb Pot Flow
+
+1. **Ante Phase**
+   - All players post the agreed-upon **bomb ante**.
+   - No blinds or preflop betting.
+
+2. **Dealing**
+   - Each player is dealt **4 (or more) hole cards**.
+   - **Two flops**, **two turns**, and **two rivers** are dealt—separately but in sync.
+
+3. **Postflop Action**
+   - Betting begins with the first player **left of the button**.
+   - Betting rounds follow:
+     - Flop → Turn → River
+   - Pot-limit structure applies throughout.
+
+4. **Showdown**
+   - Players must build a 5-card hand for **each board** using:
+     - **Exactly 2 hole cards**
+     - **Exactly 3 community cards**
+   - The pot is split:
+     - **Half** to the winner of **Board 1**
+     - **Half** to the winner of **Board 2**
+   - One player may **scoop** both halves.
+
+---
+
+## 🧬 Hole Card Variants
+
+- Most games use **4 hole cards per player** (standard).
+- Some bomb pot variants allow **5 or 6 hole cards**.
+  - Players **still** must use exactly **2 hole cards** and **3 board cards** per board.
+
+---
+
+## 🧠 Hand Construction
+
+- Players build **separate hands per board**.
+- Each hand must use:
+  - **2 of your hole cards**
+  - **3 cards from the corresponding board**
+- Different combinations can be used on each board.
+
+---
+
+## 🧮 All-In & Side Pots
+
+When players are all-in for different stack sizes:
+- A **main pot** is created with the smallest all-in bet.
+- Additional bets form **side pots** contested by remaining players.
+
+**Resolution Order**:
+1. Evaluate main pot first (all eligible players).
+2. Then resolve side pots in order, comparing only hands of players still eligible.
+
+Each pot may also be split across two boards.
+
+---
+
+## 🏆 Showdown & Winning
+
+- Best hand on **each board** wins **half the total pot**.
+- A player who wins both boards **scoops** the full pot.
+- Split pots can divide further when boards tie or side pots exist.
+
+---
+
+## 📊 Hand Rankings (High-Only)
+
+Pot Limit Omaha uses standard poker hand rankings:
+
+| Rank            | Description                            |
+|------------------|----------------------------------------|
+| Royal Flush      | A-K-Q-J-T of the same suit             |
+| Straight Flush   | Five consecutive suited cards          |
+| Four of a Kind   | e.g. J♠ J♦ J♣ J♥ 8♦                    |
+| Full House       | e.g. 9♣ 9♦ 9♠ 3♠ 3♣                    |
+| Flush            | Any five cards of the same suit        |
+| Straight         | Five consecutive cards, any suits      |
+| Three of a Kind  | e.g. Q♣ Q♠ Q♦ 7♠ 2♣                    |
+| Two Pair         | e.g. T♠ T♦ 4♥ 4♣ A♣                    |
+| One Pair         | e.g. A♠ A♥ 9♦ 6♣ 3♣                    |
+| High Card        | e.g. A♠ Q♥ 9♦ 6♣ 4♠                    |
+
+### 🎯 Kickers Matter
+- **Kickers** are used to break ties.
+- Example:
+  - A♠ A♥ K♦ T♣ J♠ **beats** A♠ A♥ Q♦ T♣ J♠
+  - Because **K > Q**
+
+---
+
+## 🍴 Pot Splitting Examples
+
+### ⚖️ 50/50 Split
+- Player A wins Board 1
+- Player B wins Board 2
+- Each gets **half the pot**
+
+### 🥇 Scoop Scenario
+- Player C wins **both boards**
+- C receives **100% of the pot**
+
+### 🪓 Quarter Pot
+- Board 1 is a **tie** between A and B
+- Board 2 is won by A
+- Pot:
+  - 25% to A (half of Board 1)
+  - 25% to B (half of Board 1)
+  - 50% to A (Board 2 win)
+- **Player A gets 75%, Player B gets 25%**
+
+### 🧩 Side Pot + Split Example
+- Player A is all-in for 40 BB
+- Player B and C continue betting to 100 BB
+- Main pot: contested by A, B, C
+- Side pot: contested only by B and C
+- At showdown:
+  - A wins Board 1 → gets 50% of main pot
+  - C wins Board 2 → gets 50% of main pot
+  - C also wins side pot → gets 100% of side pot
+
+---
+
+## 🔁 Quick Reference Table
+
+| Rule                         | Description                                         |
+|-----------------------------|-----------------------------------------------------|
+| Hole Cards                  | Usually 4; variants may allow 5–6                   |
+| Preflop Betting             | Skipped in bomb pots, used in standard PLO          |
+| Community Boards            | Two full boards (flop, turn, river ×2)              |
+| Betting Structure           | Pot-Limit                                           |
+| Hand Construction           | 2 hole + 3 board per board                          |
+| Showdown                    | Hands resolved per board                            |
+| Pot Division                | 50/50 or chopped into quarters/thirds              |
+| All-In & Side Pots          | Standard multi-way pot resolution                  |
+| Position                    | Button rotates; acts last postflop                 |
+| Hand Rankings               | High-only + kicker tiebreakers                     |
+
+---
+
+## 📚 Glossary
+
+- **Bomb Pot** – All players ante in; no preflop betting
+- **Double Board** – Two separate boards run simultaneously
+- **Pot-Limit** – Max raise = current pot size after call
+- **Scoop** – Winning both boards and claiming the entire pot
+- **Quartered** – Tying one board → winning only 25% of the pot
+- **Thirds** – Uneven pot splits in 3-way ties or scoop/tie combos
+- **Side Pot** – Formed when players are all-in for different stack sizes
+- **Kicker** – Unpaired card used to break ties in hand strength
+- **Button** – Dealer position; acts last postflop

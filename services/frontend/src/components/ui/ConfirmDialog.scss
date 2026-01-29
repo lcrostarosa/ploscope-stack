@@ -1,0 +1,70 @@
+@use '../../styles/Variables' as *;
+
+.confirm-dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.confirm-dialog-modal {
+  background: var(--modal-bg, var(--bg-secondary));
+  color: var(--modal-text, var(--text-secondary));
+  border-radius: 8px;
+  box-shadow: 0 4px 32px var(--shadow-darker);
+  min-width: 320px;
+  max-width: 90vw;
+  padding: 1.5rem 2rem;
+  animation: fadeIn 0.2s;
+}
+.confirm-dialog-header {
+  margin-bottom: 1rem;
+}
+.confirm-dialog-content {
+  margin-bottom: 1.5rem;
+}
+.confirm-dialog-actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: flex-end;
+}
+.confirm-dialog-overlay.dark .confirm-dialog-modal {
+  background: var(--modal-bg-dark);
+  color: var(--modal-text-dark);
+}
+.confirm-dialog-overlay.light .confirm-dialog-modal {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+}
+.btn {
+  padding: 0.5rem 1.2rem;
+  border-radius: 4px;
+  border: none;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.confirm-dialog-overlay.dark .btn-secondary {
+  background: var(--btn-secondary-dark);
+  color: var(--modal-text-dark);
+}
+.confirm-dialog-overlay.dark .btn-secondary:hover {
+  background: var(--btn-secondary-dark-hover);
+}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+

@@ -1,0 +1,58 @@
+# Database Init Production Docker Compose Configuration
+# This file contains only the db-migrate service for production deployment
+
+services:
+  db-migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BUILD_ENV: production
+        BUILDKIT_INLINE_CACHE: 1
+    container_name: ploscope-db-migrate-production
+    env_file:
+      - env.production
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_MIGRATE_HOST=${POSTGRES_MIGRATE_HOST}
+      - PGPASSWORD=${PGPASSWORD}
+      - SCHEMA_USER=${SCHEMA_USER}
+      - SCHEMA_PASSWORD=${SCHEMA_PASSWORD}
+      - POSTGRES_SCHEMA_USER=${POSTGRES_SCHEMA_USER}
+      - POSTGRES_SCHEMA_PASSWORD=${POSTGRES_SCHEMA_PASSWORD}
+      - LOG_LEVEL=${LOG_LEVEL}
+      - PYTHONUNBUFFERED=${PYTHONUNBUFFERED}
+      - PYTHONDONTWRITEBYTECODE=${PYTHONDONTWRITEBYTECODE}
+      - BUILD_ENV=${BUILD_ENV}
+      - RESTART_POLICY=${RESTART_POLICY}
+      - VOLUME_MODE=${VOLUME_MODE}
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "${POSTGRES_HOST}", "-U", "${POSTGRES_USER}", "-d", "${POSTGRES_DB}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: "no"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    networks:
+      plo-network-production:
+        ipv4_address: 172.30.0.26
+
+networks:
+  plo-network-production:
+    external: true
+

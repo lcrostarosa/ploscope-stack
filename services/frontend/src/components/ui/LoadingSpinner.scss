@@ -1,0 +1,140 @@
+@use '../../styles/Variables' as *;
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: conic-gradient(
+                  from 0deg,
+                  var(--spinner-color-1) 0deg,
+                  var(--spinner-color-2) 60deg,
+                  var(--spinner-color-3) 120deg,
+                  var(--spinner-color-4) 180deg,
+                  var(--spinner-color-5) 240deg,
+                  var(--spinner-color-6) 300deg,
+                  var(--spinner-color-1) 360deg
+  );
+  animation: colorRotate 2s linear infinite;
+  position: relative;
+  margin-bottom: 1rem;
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    right: 4px;
+    bottom: 4px;
+    background: var(--bg-primary);
+    border-radius: 50%;
+  }
+}
+
+// Dark theme spinner colors are handled by CSS variables in Variables.scss
+// The spinner automatically uses the appropriate colors based on the theme
+
+@keyframes colorRotate {
+  0% {
+    filter: hue-rotate(0deg);
+  }
+  100% {
+    filter: hue-rotate(360deg);
+  }
+}
+
+.loading-spinner-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 1rem;
+
+  // Center the OrbitProgress component
+  > div {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  // Customize the text styling if needed
+  span {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    font-weight: 500;
+  }
+}
+
+// App-level loading container
+.app-loading-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background: var(--bg-primary);
+}
+
+// Loading states for different contexts
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  gap: 1rem;
+
+  .loading-spinner-container {
+    padding: 2rem;
+  }
+}
+
+.loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--modal-bg);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+
+  .loading-spinner-container {
+    background: var(--bg-primary);
+    border-radius: 12px;
+    padding: 2rem;
+    box-shadow: 0 8px 32px var(--shadow-dark);
+  }
+}
+
+// Inline loading for buttons and small elements
+.loading-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+
+  .loading-spinner-container {
+    padding: 0.25rem;
+  }
+}
+
+// Responsive adjustments
+@media (max-width: 768px) {
+  .loading-spinner-container {
+    padding: 0.75rem;
+  }
+
+  .loading-state {
+    min-height: 150px;
+
+    .loading-spinner-container {
+      padding: 1.5rem;
+    }
+  }
+
+  .loading-overlay .loading-spinner-container {
+    padding: 1.5rem;
+  }
+}
+
+

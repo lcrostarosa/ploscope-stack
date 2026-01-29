@@ -1,0 +1,30 @@
+# Node modules
+node_modules/
+
+# Build outputs
+dist/
+build/
+
+# Data directories
+data/
+
+# Test files (optional - uncomment if you want to exclude them)
+# __tests__/
+
+# Generated files
+*.min.js
+*.bundle.js
+
+data/**
+
+# Logger utility (simple file)
+utils/logger.js
+
+# TypeScript declaration files
+*.d.ts
+
+# Coverage reports
+coverage/
+
+# Environment files
+.env*

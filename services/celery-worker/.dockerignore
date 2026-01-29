@@ -1,0 +1,57 @@
+# Celery-specific Docker ignore to minimize build context
+
+# Python caches
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so
+
+# Virtual environments
+venv/
+.venv/
+
+# Test files
+tests/
+test_*
+*_test.py
+pytest.ini
+pytest_*.ini
+
+# Coverage and logs
+htmlcov/
+.coverage
+coverage.xml
+*.cover
+logs/
+*.log
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+.DS_Store?
+
+# Git
+.git/
+.github/
+.gitignore
+
+# Documentation
+*.md
+README*
+
+# Large vendored Python source
+Python-3.11.9/
+
+# Poetry (keep lock file for reproducible builds)
+# poetry.lock

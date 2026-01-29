@@ -1,0 +1,215 @@
+// =============================================================================
+// Card Component Styles
+// =============================================================================
+
+@use '../../styles/Variables' as *;
+
+// Base Card Styles (for Card component)
+.card {
+  width: clamp(30px, 8vw, 50px);
+  height: clamp(36px, 9.6vw, 60px);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(0.8rem, 2.4vw, 1.5rem);
+  font-weight: bold;
+  border: 1px solid var(--border-color);
+  background: var(--bg-primary);
+  flex-shrink: 0;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s ease;
+  position: relative;
+
+  .card-suit {
+    position: absolute;
+    top: 2px;
+    right: 3px;
+    font-size: clamp(0.5rem, 1.2vw, 0.8rem);
+    line-height: 1;
+  }
+
+  .card-rank {
+    font-size: clamp(0.8rem, 2.4vw, 1.5rem);
+    line-height: 1;
+  }
+
+  // Responsive scaling for smaller screens
+  @media (max-width: 768px) {
+    width: clamp(28px, 7vw, 44px);
+    height: clamp(33px, 8.4vw, 52px);
+    font-size: clamp(0.7rem, 2.2vw, 1.3rem);
+
+    .card-suit {
+      font-size: clamp(0.4rem, 1vw, 0.7rem);
+      top: 1px;
+      right: 2px;
+    }
+
+    .card-rank {
+      font-size: clamp(0.7rem, 2.2vw, 1.3rem);
+    }
+  }
+
+  @media (max-width: 480px) {
+    width: clamp(24px, 6vw, 40px);
+    height: clamp(30px, 7.2vw, 48px);
+    font-size: clamp(0.6rem, 2vw, 1.2rem);
+
+    .card-suit {
+      font-size: clamp(0.35rem, 0.8vw, 0.6rem);
+      top: 1px;
+      right: 2px;
+    }
+
+    .card-rank {
+      font-size: clamp(0.6rem, 2vw, 1.2rem);
+    }
+  }
+
+  // Card suit colors
+  &.hearts {
+    background: var(--card-hearts-color);
+  }
+  &.diamonds {
+    background: var(--card-diamonds-color);
+  }
+  &.spades {
+    background: var(--card-spades-color);
+    border-color: var(--card-spades-color); // Match border to background for seamless appearance
+  }
+  &.clubs {
+    background: var(--card-clubs-color);
+  }
+
+  // Clickable state
+  &.clickable {
+    cursor: pointer;
+    
+    &:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+    }
+  }
+}
+
+// Hero Card Styles (for landing page preview)
+.hero-card {
+  width: 40px;
+  height: 56px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  font-weight: 600;
+  border: 1px solid var(--border-color);
+  background: var(--bg-primary);
+  flex-shrink: 0;
+
+  @media (max-width: 480px) {
+    width: 32px;
+    height: 45px;
+    font-size: 0.8rem;
+  }
+
+  // Card suit colors
+  &.hearts {
+    background: var(--card-hearts-color);
+  }
+  &.diamonds {
+    background: var(--card-diamonds-color);
+  }
+  &.spades {
+    background: var(--card-spades-color);
+    border-color: var(--card-spades-color); // Match border to background for seamless appearance
+  }
+  &.clubs {
+    background: var(--card-clubs-color);
+  }
+
+  // Card back styling
+  &.back {
+    background: var(--gradient-primary);
+    font-size: 1.2rem;
+  }
+}
+
+// Hidden Card Styles (for face-down cards)
+.card.hidden {
+  background-color: var(--primary-color);
+  font-size: clamp(0.7rem, 2vw, 1.2rem);
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: clamp(30px, 8vw, 50px);
+  height: clamp(36px, 9.6vw, 60px);
+  border-radius: 6px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--border-color);
+
+  // Responsive scaling for smaller screens
+  @media (max-width: 768px) {
+    width: clamp(28px, 7vw, 44px);
+    height: clamp(33px, 8.4vw, 52px);
+    font-size: clamp(0.6rem, 1.8vw, 1.1rem);
+  }
+
+  @media (max-width: 480px) {
+    width: clamp(24px, 6vw, 40px);
+    height: clamp(30px, 7.2vw, 48px);
+    font-size: clamp(0.5rem, 1.6vw, 1rem);
+  }
+}
+
+// Mini Card Styles (for mobile preview)
+.mini-card {
+  width: 40px;
+  height: 56px;
+  border-radius: 6px;
+  background: var(--card-background);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  font-size: 0.9rem;
+}
+
+
+// Mobile Cards Container
+.mobile-cards {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+// VS Indicator (related to card display)
+.vs-indicator {
+  font-size: 1.5rem;
+  font-weight: 800;
+  margin: 0.5rem 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-shadow: 0 1px 2px var(--shadow-light);
+
+  @media (max-width: 480px) {
+    font-size: 1.2rem;
+    margin: 0.25rem 0;
+  }
+}
+
+
+// Hand Styles (for hero and opponent hands)
+.hero-hand,
+.opponent-hand {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: nowrap;
+  overflow: hidden;
+
+  @media (max-width: 480px) {
+    gap: 0.25rem;
+  }
+}

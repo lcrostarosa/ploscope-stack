@@ -1,0 +1,114 @@
+name: Python CI (Poetry)
+
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        description: Python version to use
+        required: false
+        type: string
+        default: '3.11'
+      project-path:
+        description: Path to the Python project (contains pyproject.toml)
+        required: false
+        type: string
+        default: '.'
+      run-tests:
+        description: Run pytest tests
+        required: false
+        type: boolean
+        default: true
+      test-args:
+        description: Extra pytest args
+        required: false
+        type: string
+        default: ''
+      build:
+        description: Build the package with Poetry
+        required: false
+        type: boolean
+        default: true
+      publish:
+        description: Publish the package with Poetry
+        required: false
+        type: boolean
+        default: false
+      publish-repository:
+        description: Poetry repository name to publish to (e.g. pypi or nexus)
+        required: false
+        type: string
+        default: ''
+    secrets:
+      PYPI_TOKEN:
+        required: false
+      NEXUS_USERNAME:
+        required: false
+      NEXUS_PASSWORD:
+        required: false
+
+jobs:
+  python:
+    name: Python build and test (Poetry)
+    runs-on: ${{ vars.GHA_RUNNER }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.project-path }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs['python-version'] }}
+
+      - name: Install Poetry
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 - -y
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          poetry --version
+
+      - name: Configure Poetry
+        run: |
+          poetry config virtualenvs.create true
+          poetry config virtualenvs.in-project true
+
+      - name: Cache virtualenv
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ inputs.project-path }}/.venv
+            ~/.cache/pip
+          key: ${{ runner.os }}-poetry-${{ hashFiles(format('{0}/poetry.lock', inputs['project-path'])) }}
+          restore-keys: |
+            ${{ runner.os }}-poetry-
+
+      - name: Install dependencies
+        run: |
+          if [ -f "poetry.lock" ]; then
+            poetry install --no-interaction --no-ansi
+          else
+            poetry install --no-interaction --no-ansi
+          fi
+
+      - name: Run tests
+        if: ${{ inputs['run-tests'] == true }}
+        run: |
+          poetry run pytest -q ${{ inputs['test-args'] }}
+
+      - name: Build package
+        if: ${{ inputs.build == true }}
+        run: poetry build
+
+      - name: Publish package (Poetry)
+        if: ${{ inputs.publish == true }}
+        env:
+          POETRY_PYPI_TOKEN_PYPI: ${{ secrets.PYPI_TOKEN }}
+          POETRY_HTTP_BASIC_nexus_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          POETRY_HTTP_BASIC_nexus_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+        run: |
+          if [ -n "${{ inputs['publish-repository'] }}" ]; then
+            poetry publish -r "${{ inputs['publish-repository'] }}" --no-interaction --username "${{ secrets.NEXUS_USERNAME }}" --password "${{ secrets.NEXUS_PASSWORD }}"
+          else
+            poetry publish --no-interaction
+          fi

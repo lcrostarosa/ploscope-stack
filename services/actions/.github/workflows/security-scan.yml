@@ -1,0 +1,102 @@
+name: Security Scan (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      python-project-path:
+        description: Path to Python project (pyproject.toml)
+        required: false
+        type: string
+        default: ''
+      node-project-path:
+        description: Path to Node project (package.json)
+        required: false
+        type: string
+        default: ''
+      run-trivy:
+        description: Run Trivy FS scan
+        required: false
+        type: boolean
+        default: true
+    secrets: {}
+
+jobs:
+  security:
+    runs-on: ${{ vars.GHA_RUNNER }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        if: ${{ inputs['python-project-path'] != '' }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Poetry
+        if: ${{ inputs['python-project-path'] != '' }}
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 - -y
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Python dependency export
+        if: ${{ inputs['python-project-path'] != '' }}
+        working-directory: ${{ inputs['python-project-path'] }}
+        run: |
+          poetry export -f requirements.txt --without-hashes -o ../requirements-export.txt
+
+      - name: Install Python scanners
+        if: ${{ inputs['python-project-path'] != '' }}
+        run: |
+          python -m pip install --upgrade pip
+          pip install bandit safety pip-audit
+
+      - name: Run Python scans
+        if: ${{ inputs['python-project-path'] != '' }}
+        working-directory: ${{ inputs['python-project-path'] }}
+        run: |
+          poetry run bandit -q -r . -f json -o ../bandit-results.json || true
+          safety check -r ../requirements-export.txt --json > ../safety-results.json || true
+          pip-audit -r ../requirements-export.txt --format=json --output ../pip-audit-results.json || true
+
+      - name: Set up Node
+        if: ${{ inputs['node-project-path'] != '' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install Node dependencies
+        if: ${{ inputs['node-project-path'] != '' }}
+        working-directory: ${{ inputs['node-project-path'] }}
+        run: |
+          npm ci
+          npm i --save-dev eslint eslint-plugin-security || true
+
+      - name: Run Node scans
+        if: ${{ inputs['node-project-path'] != '' }}
+        working-directory: ${{ inputs['node-project-path'] }}
+        run: |
+          npx eslint . --ext .js,.jsx,.ts,.tsx --format json --output-file ../eslint-results.json || true
+          npm audit --audit-level=moderate --json > ../npm-audit-results.json || true
+
+      - name: Trivy filesystem scan
+        if: ${{ inputs['run-trivy'] == true }}
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy-fs-results.sarif
+          severity: CRITICAL,HIGH,MEDIUM
+          limit-severities-for-sarif: true
+        continue-on-error: true
+
+      - name: Upload security artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-results-${{ github.sha }}
+          path: |
+            *.sarif
+            *-results.json
+            requirements-export.txt
+          retention-days: 14

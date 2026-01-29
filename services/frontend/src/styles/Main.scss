@@ -1,0 +1,84 @@
+@use 'Variables' as *;
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-family-base);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-base);
+}
+
+// Ensure all elements inherit the font family
+* {
+  font-family: inherit;
+}
+
+// Typography improvements
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 600;
+  line-height: 1.2;
+  margin: 0 0 1rem 0;
+  color: var(--text-primary);
+}
+
+p {
+  margin: 0 0 1rem 0;
+  color: var(--text-primary);
+}
+
+// Ensure all text elements use proper colors
+span, div, label, input, textarea, select, button {
+  color: inherit;
+}
+
+// Allow specific elements to use secondary colors
+.secondary-text, .muted-text, 
+[class*="gray"], [class*="muted"], [class*="secondary"] {
+  color: var(--text-secondary) !important;
+}
+
+
+// Links
+a {
+  color: var(--primary-color);
+  text-decoration: none;
+  
+  &:hover {
+    color: var(--primary-hover);
+    text-decoration: underline;
+  }
+}
+
+// Improve text rendering
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+// Hide scrollbars globally while maintaining scroll functionality
+* {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* Internet Explorer 10+ */
+}
+
+*::-webkit-scrollbar {
+  display: none; /* WebKit browsers (Chrome, Safari, Edge) */
+}
+
+// Ensure scrolling still works
+html, body {
+  overflow-x: hidden; /* Hide horizontal scrollbar */
+  overflow-y: auto; /* Allow vertical scrolling */
+}
+
+

@@ -1,0 +1,41 @@
+---
+# Example variables file for Hetzner server deployment
+# Copy this file to vars.yml and update with your actual values
+
+# Git repository URL for the PLOSolver project
+git_repo_url: "git@github.com:PLOScope/plo-solver.git"
+git_branch: "master"        # Branch to deploy (e.g., master, staging, feature/xyz)
+
+# Directory where the project will be cloned and deployed
+project_dir: "/home/appuser/plo-solver"
+
+# Directory for SSL certificates and keys
+ssl_dir: "/home/appuser/ssl"
+
+# Hetzner server IP address
+hetzner_server_ip: "123.456.789.012"
+
+# Path to the SSH private key file
+hetzner_private_key_file: "~/.ssh/plo-scope-staging"
+
+# Path to the SSH public key file
+hetzner_public_key_file: "~/.ssh/plo-scope-staging.pub"
+
+domain: "staging.ploscope.com"
+
+# Appuser password (required for user creation)
+appuser_password: "your_secure_password_here"
+
+# GitHub API configuration
+github_token: "your_github_personal_access_token_here"
+github_username: "your_github_username_here" 
+
+# GitHub Actions runner token
+gha_runner_token: "your_github_actions_runner_token_here"
+
+# Docker Hub credentials
+docker_username: "your_docker_username_here"
+docker_password: "your_docker_password_here"
+
+# Image tag to deploy (e.g., PR-123, staging, production, 1.2.3)
+image_tag: "staging"

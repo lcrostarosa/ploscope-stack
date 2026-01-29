@@ -1,0 +1,133 @@
+---
+- name: Ensure docker socket has correct permissions
+  file:
+    path: /var/run/docker.sock
+    mode: '0770'
+    group: docker
+    owner: root
+  become: yes
+
+- name: Start and enable Docker service
+  systemd:
+    name: docker
+    state: started
+    enabled: yes
+  become: yes
+
+- name: Ensure project directory exists and has correct permissions
+  file:
+    path: "{{ project_dir }}"
+    state: directory
+    owner: appuser
+    group: appuser
+    mode: '0750'
+  become: no
+  become_user: appuser
+
+- name: Pull latest changes from Git repository
+  git:
+    repo: "{{ git_repo_url }}"
+    dest: "{{ project_dir }}"
+    version: "{{ git_branch | default('master') }}"
+    accept_hostkey: yes
+    update: yes
+    force: yes
+  become: no
+  become_user: appuser
+
+- name: Remove existing env.staging file if it exists
+  file:
+    path: "{{ project_dir }}/env.staging"
+    state: absent
+  become: no
+  become_user: appuser
+
+- name: Copy env.staging file to server
+  copy:
+    src: "{{ playbook_dir }}/../../env.staging"
+    dest: "{{ project_dir }}/env.staging"
+    mode: '0600'
+    owner: appuser
+    group: appuser
+  become: no
+  become_user: appuser
+
+- name: Source env.staging file
+  shell: |
+    set -a
+    source "{{ project_dir }}/env.staging"
+    set +a
+  args:
+    chdir: "{{ project_dir }}"
+  become: no
+  become_user: appuser
+
+- name: Remove existing docker-compose.staging.yml file if it exists
+  file:
+    path: "{{ project_dir }}/docker-compose.staging.yml"
+    state: absent
+  become: no
+  become_user: appuser
+
+- name: Copy docker-compose.staging.yml file to server
+  copy:
+    src: "{{ playbook_dir }}/../../docker-compose.staging.yml"
+    dest: "{{ project_dir }}/docker-compose.staging.yml"
+    mode: '0600'
+    owner: appuser
+    group: appuser
+  become: no
+  become_user: appuser
+
+- name: Ensure Prometheus data directory exists with correct ownership
+  file:
+    path: "{{ project_dir }}/data/prometheus"
+    state: directory
+    mode: '0775'
+    owner: '65534'   # nobody
+    group: '65534'   # nogroup
+  become: yes
+
+- name: Ensure Grafana data directory exists with correct ownership
+  file:
+    path: "{{ project_dir }}/data/grafana"
+    state: directory
+    mode: '0775'
+    owner: '472'     # grafana
+    group: '472'     # grafana
+  become: yes
+
+- name: Login to Docker Hub
+  shell: |
+    echo "{{ docker_password }}" | docker login -u {{ docker_username }} --password-stdin
+  become: no
+  become_user: appuser
+  no_log: true
+
+- name: Pull Docker Images
+  command: docker compose -f docker-compose.staging.yml pull
+  args:
+    chdir: "{{ project_dir }}"
+  become: no
+  become_user: appuser
+  environment:
+    IMAGE_TAG: "{{ image_tag | default('staging') }}"
+
+- name: Stop existing docker services
+  command: docker compose -f docker-compose.staging.yml down
+  args:
+    chdir: "{{ project_dir }}"
+  become: no
+  become_user: appuser
+  environment:
+    DOCKER_HOST: "unix:///var/run/docker.sock"
+
+- name: Start docker services
+  command: docker compose -f docker-compose.staging.yml up -d 
+  args:
+    chdir: "{{ project_dir }}"
+  become: no
+  become_user: appuser
+  environment:
+    DOCKER_HOST: "unix:///var/run/docker.sock"
+    IMAGE_TAG: "{{ image_tag | default('staging') }}"

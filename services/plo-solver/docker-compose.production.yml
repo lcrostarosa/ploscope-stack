@@ -1,0 +1,349 @@
+
+
+services:
+  frontend:
+    image: ploscope/frontend:${IMAGE_TAG:-production}
+    build:
+      context: src/frontend
+      dockerfile: Dockerfile
+      args:
+        NODE_ENV: production
+        REACT_APP_API_URL: /api
+        BUILDKIT_INLINE_CACHE: 1
+    container_name: plosolver-frontend-production
+    env_file:
+      - env.production
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+      traefik:
+        condition: service_healthy
+      db-migrate:
+        condition: service_completed_successfully
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    networks:
+      plo-network-production:
+        ipv4_address: 172.30.0.12
+    volumes:
+      - shared-logs:/app/logs
+
+  backend:
+    image: ploscope/backend:${IMAGE_TAG:-production}
+    build:
+      context: src/backend
+      dockerfile: Dockerfile
+      args:
+        BUILD_ENV: production
+        PIP_INDEX_URL: ${PIP_INDEX_URL}
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST}
+        BUILDKIT_INLINE_CACHE: 1
+    container_name: plosolver-backend-production
+    labels:
+      - "traefik.enable=true"
+    ports:
+      - "5001:5001"
+    volumes:
+      - ./src/backend/services:/app/backend/services
+      - shared-logs:/app/logs
+    env_file:
+      - env.production
+    environment:
+      - PGPASSWORD=${POSTGRES_PASSWORD}
+      - DATABASE_URL=${DATABASE_URL}
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      db-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5001/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    networks:
+      plo-network-production:
+        ipv4_address: 172.30.0.13
+
+  celeryworker:
+    image: ploscope/celery-worker:${IMAGE_TAG:-production}
+    build:
+      context: src/celery
+      dockerfile: Dockerfile
+      args:
+        BUILDKIT_INLINE_CACHE: 1
+        BUILD_ENV: production
+        PIP_INDEX_URL: ${PIP_INDEX_URL}
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST}
+    container_name: plosolver-celeryworker-production
+    env_file:
+      - env.production
+    environment:
+      - FLASK_ENV=production
+      - FLASK_DEBUG=false
+      - ENVIRONMENT=production
+      # CELERY_BROKER_URL will be constructed by the Celery app from environment variables
+      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      db-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "celery"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+        reservations:
+          memory: 1G
+          cpus: '1.0'
+    networks:
+      plo-network-production:
+        ipv4_address: 172.30.0.24
+
+  db-migrate:
+    build:
+      context: src/db-init
+      dockerfile: Dockerfile
+    container_name: plosolver-db-migrate-production
+    env_file:
+      - env.production
+    depends_on:
+      db:
+        condition: service_healthy
+    
+    restart: "no"
+    networks:
+      plo-network-production:
+        ipv4_address: 172.30.0.25
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: plosolver-rabbitmq-production
+    labels:
+      - "traefik.enable=true"
+    ports:
+      - "5672:5672"    # AMQP port
+      - "15672:15672"  # Management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - traefik_certs:/etc/traefik-certs:ro
+      - ./scripts/operations/cert-monitor.sh:/bin/cert-monitor.sh:ro
+      - ./scripts/utilities/entrypoint-wrapper.sh:/bin/entrypoint-wrapper.sh:ro
+      - ./scripts/setup/rabbitmq-entrypoint.sh:/rabbitmq-entrypoint.sh:ro
+    entrypoint: ["/rabbitmq-entrypoint.sh"]
+    env_file:
+      - env.production
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_DEFAULT_USER}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_DEFAULT_PASS}
+      - RABBITMQ_DEFAULT_VHOST=${RABBITMQ_DEFAULT_VHOST}
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      plo-network-production:
+        ipv4_address: 172.30.0.10
+
+  traefik:
+    image: traefik:v3.4.4
+    container_name: plosolver-traefik-production
+    command:
+      - "--configfile=/etc/traefik/traefik.yml"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik_certs:/etc/certs
+      - ./server/traefik/production/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./server/traefik/production/dynamic.docker.yml:/etc/traefik/dynamic.yml:ro
+      - ${TRAEFIK_LOG_PATH:-./logs/traefik}:/var/log/traefik
+    env_file:
+      - env.production
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/api/http/routers"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+    networks:
+      plo-network-production:
+        ipv4_address: 172.30.0.11
+
+  db:
+    image: postgres:15
+    container_name: plosolver-db-production
+    ports:
+      - "5432:5432"  # Expose for integration tests
+    env_file:
+      - env.production
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    volumes:
+      - ${POSTGRES_DATA_PATH:-/mnt/volume-hil-1/data}:/var/lib/postgresql/data
+      - ${POSTGRES_BACKUP_PATH:-./backups}:/backups:rw
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      plo-network-production:
+        ipv4_address: 172.30.0.14
+
+  redis:
+    image: redis:7-alpine
+    container_name: plosolver-redis-production
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: ["sh", "-c", "exec redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru --requirepass \"$REDIS_PASSWORD\""]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$REDIS_PASSWORD\" ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    env_file:
+      - env.production
+    networks:
+      plo-network-production:
+        ipv4_address: 172.30.0.16
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: plosolver-prometheus-production
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./data/prometheus:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      plo-network-production:
+        ipv4_address: 172.30.0.21
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: plosolver-grafana-production
+    ports:
+      - "3006:3000"
+    env_file:
+      - env.production
+    environment:
+      - SLACK_ALERT_WEBHOOK_URL=${SLACK_ALERT_WEBHOOK_URL}
+      - GF_SMTP_ENABLED=${GF_SMTP_ENABLED}
+      - GF_SMTP_HOST=${GF_SMTP_HOST}
+      - GF_SMTP_USER=${GF_SMTP_USER}
+      - GF_SMTP_PASSWORD=${GF_SMTP_PASSWORD}
+      - GF_SMTP_FROM_ADDRESS=${GF_SMTP_FROM_ADDRESS}
+      - GF_SMTP_FROM_NAME=${GF_SMTP_FROM_NAME}
+      - GF_SERVER_ROOT_URL=${GF_SERVER_ROOT_URL}
+    volumes:
+      - ./data/grafana:/var/lib/grafana
+      - ./server/prometheus/grafana-provisioning.yml:/etc/grafana/provisioning/datasources/prometheus.yml:ro
+      - ./server/prometheus/grafana-dashboards-provisioning/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+      - ./server/prometheus/grafana-dashboards:/etc/grafana/dashboards:ro
+      - ./server/prometheus/grafana-alerting-provisioning/alerting.yml:/etc/grafana/provisioning/alerting/alerting.yml:ro
+      - ./server/prometheus/grafana-alerting-provisioning/rules.yml:/etc/grafana/provisioning/alerting/rules.yml:ro
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/login"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      plo-network-production:
+        ipv4_address: 172.30.0.22
+
+  # Portainer for Docker management (SSH-only access)
+  portainer:
+    image: portainer/portainer-ce:alpine-sts
+    container_name: plosolver-portainer-production
+    labels:
+      - "traefik.enable=true"
+    command: -H unix:///var/run/docker.sock
+    ports:
+      - "9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+      - traefik_certs:/etc/traefik-certs:ro
+      - ./scripts/operations/cert-monitor.sh:/scripts/cert-monitor.sh:ro
+      - ./scripts/utilities/entrypoint-wrapper.sh:/scripts/entrypoint-wrapper.sh:ro
+    entrypoint: ["/scripts/entrypoint-wrapper.sh", "/portainer"]
+    environment:
+      - CERT_DOMAIN=portainer.ploscope.com
+      - CERT_FILE=/data/certs/portainer.crt
+      - KEY_FILE=/data/certs/portainer.key
+      - SERVICE_NAME=portainer
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9000/api/system/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 180s
+    restart: unless-stopped
+    networks:
+      plo-network-production:
+        ipv4_address: 172.30.0.23
+
+volumes:
+  traefik_certs:
+  traefik_letsencrypt:
+  rabbitmq_data:
+  portainer_data:
+  shared-logs:
+  redis_data:
+
+networks:
+  plo-network-production:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24 

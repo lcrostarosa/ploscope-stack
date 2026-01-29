@@ -1,0 +1,148 @@
+@use '../../styles/Variables' as *;
+
+.centralized-action-buttons {
+  /* Static positioning below the felt */
+  position: relative;
+  width: 100%;
+  max-width: 600px;
+  margin: 2rem auto;
+  background-color: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 1rem;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.2);
+
+  @media (max-width: 768px) {
+    margin: 1.5rem auto;
+    padding: 0.75rem;
+    max-width: 90%;
+  }
+
+  @media (max-width: 480px) {
+    margin: 1rem auto;
+    padding: 0.5rem;
+  }
+
+  .action-buttons-header {
+    text-align: center;
+    margin-bottom: 1rem;
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+
+    strong {
+      color: var(--text-primary);
+      font-size: 1rem;
+      font-weight: 600;
+    }
+  }
+
+  .keyboard-hints-tooltip {
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+
+    .help-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background-color: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
+      font-size: 0.75rem;
+      font-weight: bold;
+      cursor: help;
+      transition: all 0.2s ease;
+
+      &:hover {
+        background-color: var(--purple-500);
+        color: white;
+        border-color: var(--purple-500);
+      }
+    }
+
+    .tooltip-content {
+      display: none;
+      position: absolute;
+      right: 0;
+      top: calc(100% + 8px);
+      background-color: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 0.5rem 0.75rem;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      white-space: nowrap;
+      z-index: 1000;
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+
+      div {
+        padding: 0.25rem 0;
+        font-family: monospace;
+      }
+    }
+
+    &:hover .tooltip-content {
+      display: block;
+    }
+
+    /* Hide tooltip on mobile devices (touch devices) */
+    @media (max-width: 768px) {
+      display: none;
+    }
+  }
+
+  .action-buttons {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    gap: 0.75rem;
+    justify-content: center;
+    align-items: stretch;
+
+    @media (max-width: 768px) {
+      gap: 0.5rem;
+    }
+
+    @media (max-width: 480px) {
+      flex-wrap: wrap;
+      gap: 0.4rem;
+    }
+  }
+
+  .action-btn {
+    flex: 1;
+    padding: 0.875rem 1.5rem;
+    font-size: 1rem;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: none;
+    text-align: center;
+    min-width: 100px;
+
+    &:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+    }
+
+    @media (max-width: 768px) {
+      padding: 0.75rem 1.25rem;
+      font-size: 0.9rem;
+      min-width: 90px;
+    }
+
+    @media (max-width: 480px) {
+      padding: 0.65rem 1rem;
+      font-size: 0.85rem;
+      min-width: 80px;
+      flex: 1 1 calc(50% - 0.2rem);
+    }
+  }
+}

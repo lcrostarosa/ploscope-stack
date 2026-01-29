@@ -1,0 +1,118 @@
+@use '../../styles/Variables' as *;
+@use './CentralizedActionButtons.scss';
+
+.action-buttons {
+  display: flex;
+  gap: 4px;
+  margin: 6px 0;
+  flex-wrap: wrap;
+  max-width: 100%;
+  overflow-x: hidden;
+
+  @media (max-width: 768px) {
+    gap: 2px;
+    margin: 4px 0;
+  }
+
+  @media (max-width: 480px) {
+    gap: 1px;
+    margin: 3px 0;
+  }
+}
+
+// Centralized action buttons - now horizontally stacked
+.centralized-action-buttons .action-buttons {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+
+  @media (max-width: 768px) {
+    gap: 6px;
+  }
+
+  @media (max-width: 480px) {
+    gap: 4px;
+  }
+}
+
+// Base button style
+.action-btn {
+  padding: 4px 8px;
+  border: none;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  flex-shrink: 0;
+
+  @media (max-width: 768px) {
+    padding: 6px 10px;
+    font-size: 0.7rem;
+    border-radius: 4px;
+  }
+
+  @media (max-width: 480px) {
+    padding: 4px 8px;
+    font-size: 0.65rem;
+  }
+}
+
+// Centralized action button style - defined in CentralizedActionButtons.scss
+// This section is now managed in CentralizedActionButtons.scss to avoid conflicts
+
+/* -------------------------------------------------------------------------
+   Variants – using CSS variables from _variables.scss
+   --------------------------------------------------------------------- */
+
+.check-btn {
+  @extend .action-btn;
+  background-color: var(--blue-500);
+  color: white;
+
+  &:hover {
+    background-color: var(--blue-600);
+  }
+}
+
+.bet-btn {
+  @extend .action-btn;
+  background-color: var(--purple-500);
+  color: white;
+
+  &:hover {
+    background-color: var(--purple-dark);
+  }
+}
+
+.call-btn {
+  @extend .action-btn;
+  background-color: var(--success-color);
+  color: white;
+
+  &:hover {
+    background-color: var(--green-500);
+  }
+}
+
+.raise-btn {
+  @extend .action-btn;
+  background-color: var(--purple-500);
+  color: white;
+
+  &:hover {
+    background-color: var(--purple-dark);
+  }
+}
+
+.fold-btn {
+  @extend .action-btn;
+  background-color: #dc2626; /* Redder red */
+  color: white;
+
+  &:hover {
+    background-color: #b91c1c; /* Darker redder red */
+  }
+}
+
+

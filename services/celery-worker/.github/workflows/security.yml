@@ -1,0 +1,127 @@
+name: Security Scans
+
+on:
+  workflow_run:
+    workflows: ["Unified CI/CD Pipeline"]
+    types:
+      - completed
+    branches: [main, master, develop]
+  workflow_dispatch:
+  schedule:
+    # Run security scans weekly on Sundays at 2 AM UTC
+    - cron: '0 2 * * 0'
+
+env:
+  REGISTRY: docker.io
+  IMAGE_NAME: ploscope
+
+jobs:
+  security:
+    name: Security Scans
+    runs-on: ${{ vars.GHA_RUNNER }}
+    permissions:
+      contents: read
+      security-events: write
+      pull-requests: write
+      issues: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install poetry
+        if: ${{ vars.GHA_RUNNER }} != 'self-hosted'
+        uses: abatilo/actions-poetry@v4
+        env:
+          POETRY_HTTP_BASIC_NEXUS_INTERNAL_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          POETRY_HTTP_BASIC_NEXUS_INTERNAL_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+
+      - name: Install poetry manually (fallback for self-hosted runners)
+        if: ${{ vars.GHA_RUNNER }} == 'self-hosted'
+        env:
+          POETRY_HTTP_BASIC_NEXUS_INTERNAL_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          POETRY_HTTP_BASIC_NEXUS_INTERNAL_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+        run: |
+          curl -sL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - uses: actions/cache@v3
+        name: Define a cache for the virtual environment based on the dependencies lock file
+        if: github.event.inputs.skip_tests != 'true' || github.event.inputs.publish_pypi == 'true' || github.event_name == 'push' || github.event_name == 'pull_request'
+        with:
+          path: ./.venv
+          key: venv-${{ hashFiles('poetry.lock') }}
+      - name: Cache security tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/trivy
+            ~/.cache/semgrep
+          key: ${{ runner.os }}-security-tools-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-security-tools-
+      - name: Install security tools
+        run: |
+          poetry config virtualenvs.in-project true
+          poetry install
+          poetry run pip install bandit safety pip-audit semgrep
+      - name: Run security scans
+        run: |
+          poetry run bandit -r . -f json -o bandit-results.json || true
+          poetry run safety check --json --output safety-results.json || true
+          poetry run pip-audit --format=json --output=pip-audit-results.json || true
+          poetry run semgrep --config=auto --json --output=semgrep-results.json . || true
+      - name: Run Trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-fs-results.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          limit-severities-for-sarif: true
+        continue-on-error: true
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-fs-results.sarif'
+          category: 'trivy-filesystem'
+        continue-on-error: true
+      - name: Upload security artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-results-${{ github.sha }}
+          path: |
+            *-results.json
+            *-readable.txt
+            *.sarif
+          retention-days: 30
+      - name: Create security summary
+        if: always()
+        run: |
+          echo "## Security Scan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f "safety-results.json" ]; then
+            echo "### Python Safety Results" >> $GITHUB_STEP_SUMMARY
+            safety_vulns=$(jq -r '.vulnerabilities[] | select(.severity == "HIGH" or .severity == "CRITICAL") | .package' safety-results.json 2>/dev/null || echo "")
+            if [ -n "$safety_vulns" ]; then
+              echo "⚠️ **High/Critical vulnerabilities found:**" >> $GITHUB_STEP_SUMMARY
+              echo "$safety_vulns" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "✅ No high/critical vulnerabilities found" >> $GITHUB_STEP_SUMMARY
+            fi
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ -f "semgrep-results.json" ]; then
+            echo "### Semgrep Results" >> $GITHUB_STEP_SUMMARY
+            semgrep_issues=$(jq -r '.results[] | select(.extra.severity == "ERROR" or .extra.severity == "WARNING") | .check_id' semgrep-results.json 2>/dev/null | wc -l)
+            echo "🔍 **Security issues found:** $semgrep_issues" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi

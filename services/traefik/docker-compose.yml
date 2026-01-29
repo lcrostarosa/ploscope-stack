@@ -1,0 +1,58 @@
+# Traefik Docker Compose Configuration
+# This file contains the traefik service for all environments
+
+services:
+  traefik:
+    image: traefik:v3.4.4
+    container_name: ${CONTAINER_NAME:-ploscope-traefik-localdev}
+    command:
+      - --configfile=/etc/traefik/traefik.yml
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+      - "8082:8082"
+    volumes:
+      - ./${ENVIRONMENT:-localdev}/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./${ENVIRONMENT:-localdev}/dynamic.docker.yml:/etc/traefik/dynamic.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./logs:/var/log/traefik
+      - acme:/etc/certs
+    environment:
+      - TRAEFIK_DOMAIN=${TRAEFIK_DOMAIN:-localhost}
+      - TRAEFIK_LOG_LEVEL=${TRAEFIK_LOG_LEVEL:-INFO}
+      - TRAEFIK_HTTPS_ENABLED=${TRAEFIK_HTTPS_ENABLED:-false}
+      - TRAEFIK_DASHBOARD_ENABLED=${TRAEFIK_DASHBOARD_ENABLED:-true}
+      - TRAEFIK_DASHBOARD_PORT=8080
+      - ACME_EMAIL=${ACME_EMAIL:-}
+      - TRAEFIK_HTTPS_PORT=443
+      - FRONTEND_DOMAIN=${FRONTEND_DOMAIN:-localhost}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
+      - WEBSOCKET_CORS_ORIGINS=${WEBSOCKET_CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001,http://localhost,http://127.0.0.1,http://*.ngrok-free.app,https://ploscope.com,http://frontend}
+      - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
+      - BUILD_ENV=${BUILD_ENV:-development}
+      - RESTART_POLICY=${RESTART_POLICY:-unless-stopped}
+      - VOLUME_MODE=${VOLUME_MODE:-rw}
+      - ENVIRONMENT=${ENVIRONMENT:-localdev}
+      - GRAFANA_DOMAIN=${GRAFANA_DOMAIN:-}
+      - PROMETHEUS_DOMAIN=${PROMETHEUS_DOMAIN:-}
+    networks:
+      - ${NETWORK_NAME:-plo-network}
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/api/rawdata"]
+      interval: ${HEALTHCHECK_INTERVAL:-10s}
+      timeout: ${HEALTHCHECK_TIMEOUT:-5s}
+      retries: ${HEALTHCHECK_RETRIES:-5}
+      start_period: ${HEALTHCHECK_START_PERIOD:-20s}
+    restart: unless-stopped
+
+volumes:
+  acme:
+  shared-logs:
+
+networks:
+  plo-network:
+    external: true
+  plo-network-cloud:
+    external: true
+

@@ -1,0 +1,99 @@
+# RabbitMQ Init Staging Docker Compose Configuration
+# This file contains only the rabbitmq-init service for staging deployment
+
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: rabbitmq-${ENVIRONMENT}
+    platform: linux/amd64
+    labels:
+      - "traefik.enable=true"
+    ports:
+      - "5672:5672"    # AMQP port
+      - "15672:15672"  # Management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - traefik_certs:/etc/traefik-certs:ro
+      - ./scripts/cert-monitor.sh:/bin/cert-monitor.sh:ro
+      - ./scripts/entrypoint-wrapper.sh:/bin/entrypoint-wrapper.sh:ro
+    command: ["rabbitmq-server"]
+    environment:
+      - RABBITMQ_HOST=${RABBITMQ_HOST:-rabbitmq}
+      - RABBITMQ_PORT=${RABBITMQ_PORT:-5672}
+      - ENVIRONMENT=${ENVIRONMENT:-local}
+      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-dev_redis_password_2024}
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USERNAME:-admin}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD:-dev_redis_password_2024}
+      - RABBITMQ_VHOST=${RABBITMQ_VHOST:-/plosolver}
+      - RABBITMQ_SPOT_QUEUE=${RABBITMQ_SPOT_QUEUE:-spot-processing}
+      - RABBITMQ_SOLVER_QUEUE=${RABBITMQ_SOLVER_QUEUE:-solver-processing}
+      - RABBITMQ_SPOT_DLQ=${RABBITMQ_SPOT_DLQ:-spot-processing-dlq}
+      - RABBITMQ_SOLVER_DLQ=${RABBITMQ_SOLVER_DLQ:-solver-processing-dlq}
+      - RABBITMQ_MAIN_EXCHANGE=${RABBITMQ_MAIN_EXCHANGE:-plosolver.main}
+      - RABBITMQ_DLQ_EXCHANGE=${RABBITMQ_DLQ_EXCHANGE:-plosolver.dlq}
+      - TESTING=${TESTING:-false}
+      - CONTAINER_ENV=${CONTAINER_ENV:-docker}
+      - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
+      - BUILD_ENV=${BUILD_ENV:-development}
+      - RESTART_POLICY=${RESTART_POLICY:-unless-stopped}
+      - VOLUME_MODE=${VOLUME_MODE:-rw}
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics ping && rabbitmq-diagnostics check_port_connectivity"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+    networks:
+      plo-network-cloud:
+        ipv4_address: 172.30.1.11
+        aliases:
+          - rabbitmq
+
+  rabbitmq-init:
+    image: ploscope/rabbitmq-init:${ENVIRONMENT}
+    container_name: rabbitmq-init-${ENVIRONMENT}
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - RABBITMQ_HOST=${RABBITMQ_HOST:-rabbitmq}
+      - RABBITMQ_PORT=${RABBITMQ_PORT:-5672}
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USERNAME:-admin}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD:-dev_redis_password_2024}
+      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-dev_redis_password_2024}
+      - RABBITMQ_VHOST=${RABBITMQ_VHOST:-/plosolver}
+      - RABBITMQ_SPOT_QUEUE=${RABBITMQ_SPOT_QUEUE:-spot-processing}
+      - RABBITMQ_SOLVER_QUEUE=${RABBITMQ_SOLVER_QUEUE:-solver-processing}
+      - RABBITMQ_SPOT_DLQ=${RABBITMQ_SPOT_DLQ:-spot-processing-dlq}
+      - RABBITMQ_SOLVER_DLQ=${RABBITMQ_SOLVER_DLQ:-solver-processing-dlq}
+      - RABBITMQ_MAIN_EXCHANGE=${RABBITMQ_MAIN_EXCHANGE:-plosolver.main}
+      - RABBITMQ_DLQ_EXCHANGE=${RABBITMQ_DLQ_EXCHANGE:-plosolver.dlq}
+      - TESTING=${TESTING:-false}
+      - ENVIRONMENT=${ENVIRONMENT:-staging}
+      - CONTAINER_ENV=${CONTAINER_ENV:-docker}
+      - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
+      - BUILD_ENV=${BUILD_ENV:-development}
+      - RESTART_POLICY=${RESTART_POLICY:-unless-stopped}
+      - VOLUME_MODE=${VOLUME_MODE:-rw}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      plo-network-cloud:
+        ipv4_address: 172.30.1.25
+
+volumes:
+  rabbitmq_data:
+    external: true
+  traefik_certs:
+    external: true
+
+networks:
+  plo-network-cloud:
+    external: true
+    name: plo-network-cloud

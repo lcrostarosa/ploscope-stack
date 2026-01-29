@@ -1,0 +1,151 @@
+# PLOScope Development Overrides
+# Builds services from source instead of pulling images
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#   
+# Or with the dev script:
+#   ./scripts/dev.sh up
+#
+# Prerequisites:
+#   Run ./scripts/clone-repos.sh first to clone all repositories
+
+services:
+  # ============================================
+  # INFRASTRUCTURE - No changes needed
+  # (Use official images for infra services)
+  # ============================================
+
+  # ============================================
+  # INIT SERVICES - Build from source
+  # ============================================
+
+  rabbitmq-init:
+    build:
+      context: ./repos/rabbitmq
+      dockerfile: Dockerfile
+    image: ploscope/rabbitmq-init:dev
+    volumes:
+      - ./repos/rabbitmq:/app:ro
+
+  db-init:
+    build:
+      context: ./repos/db-init
+      dockerfile: Dockerfile
+    image: ploscope/db-init:dev
+    volumes:
+      - ./repos/db-init:/app/migrations:ro
+
+  # ============================================
+  # CORE SERVICES - Build from source with hot reload
+  # ============================================
+
+  backend:
+    build:
+      context: ./repos/backend
+      dockerfile: Dockerfile
+      args:
+        BUILD_ENV: development
+      secrets:
+        - nexus_username
+        - nexus_password
+    image: ploscope/backend:dev
+    volumes:
+      - ./repos/backend/src:/app/backend/src
+      - ./repos/backend/config.py:/app/backend/config.py
+      - shared-logs:/app/logs
+    environment:
+      - FLASK_DEBUG=true
+      - FLASK_ENV=development
+      - LOG_LEVEL=DEBUG
+
+  backend-grpc:
+    build:
+      context: ./repos/backend
+      dockerfile: Dockerfile
+      args:
+        BUILD_ENV: development
+      secrets:
+        - nexus_username
+        - nexus_password
+    image: ploscope/backend:dev
+    volumes:
+      - ./repos/backend/src:/app/backend/src
+
+  frontend:
+    build:
+      context: ./repos/frontend
+      dockerfile: Dockerfile.dev
+      args:
+        NODE_ENV: development
+    image: ploscope/frontend:dev
+    volumes:
+      - ./repos/frontend/src:/app/src
+      - ./repos/frontend/public:/app/public
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+      - REACT_APP_API_URL=http://localhost:5001/api
+      - CHOKIDAR_USEPOLLING=true
+
+  # ============================================
+  # WORKERS - Build from source
+  # ============================================
+
+  celery-worker:
+    build:
+      context: ./repos/celery-worker
+      dockerfile: Dockerfile
+      args:
+        BUILD_ENV: development
+      secrets:
+        - nexus_username
+        - nexus_password
+    image: ploscope/celery-worker:dev
+    volumes:
+      - ./repos/celery-worker/src:/app/src
+    environment:
+      - LOG_LEVEL=DEBUG
+
+  # ============================================
+  # MONITORING - Build configs from source
+  # ============================================
+
+  prometheus:
+    profiles: []  # Enable by default in dev
+    volumes:
+      - ./repos/monitoring/prometheus.staging.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+
+  grafana:
+    profiles: []  # Enable by default in dev
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./repos/monitoring/grafana-config/grafana-dashboards-provisioning:/etc/grafana/provisioning/dashboards:ro
+      - ./repos/monitoring/grafana-config/grafana-dashboards:/etc/grafana/dashboards:ro
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_LOG_LEVEL=debug
+
+  loki:
+    profiles: []  # Enable by default in dev
+    volumes:
+      - loki-data:/loki
+      - ./repos/monitoring/loki-config.yml:/etc/loki/config.yaml:ro
+
+  # ============================================
+  # DEV TOOLS - Enable by default in dev
+  # ============================================
+
+  portainer:
+    profiles: []  # Enable by default in dev
+
+# ============================================
+# SECRETS (for Nexus PyPI access during build)
+# ============================================
+
+secrets:
+  nexus_username:
+    environment: NEXUS_PYPI_USERNAME
+  nexus_password:
+    environment: NEXUS_PYPI_PASSWORD

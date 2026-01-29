@@ -1,0 +1,208 @@
+---
+- name: Create appuser account
+  user:
+    name: appuser
+    shell: /bin/bash
+    home: /home/appuser
+    create_home: yes
+    groups: docker
+    password: "{{ appuser_password | password_hash('sha512') }}"
+    state: present
+
+- name: Create appuser home directory
+  file:
+    path: /home/appuser
+    state: directory
+    owner: appuser
+    group: appuser
+    mode: '0755'
+
+- name: Display appuser password
+  debug:
+    msg: |
+      🔐 APPUSER PASSWORD CREATED 🔐
+      
+      Username: appuser
+      Password: {{ appuser_password }}
+      
+      ⚠️  IMPORTANT: Save this password securely!
+      You may need it for sudo operations or emergency access.
+      
+      Password will not be displayed again.
+
+- name: Add appuser to sudo group
+  user:
+    name: appuser
+    groups: sudo
+    append: yes
+
+- name: Setup SSH authentication for appuser
+  block:
+    - name: Create .ssh directory
+      file:
+        path: /home/appuser/.ssh
+        state: directory
+        mode: '0700'
+        owner: appuser
+        group: appuser
+
+    - name: Copy root's SSH private key to appuser
+      copy:
+        src: "{{ ansible_ssh_private_key_file }}"
+        dest: /home/appuser/.ssh/id_ed25519
+        mode: '0600'
+        owner: appuser
+        group: appuser
+      when: ansible_ssh_private_key_file is defined
+
+    - name: Copy root's SSH public key to appuser
+      copy:
+        src: "{{ ansible_ssh_private_key_file }}.pub"
+        dest: /home/appuser/.ssh/id_ed25519.pub
+        mode: '0644'
+        owner: appuser
+        group: appuser
+      when: ansible_ssh_private_key_file is defined
+
+    - name: Display SSH public key for authentication
+      command: cat /home/appuser/.ssh/id_ed25519.pub
+      register: ssh_public_key
+      become_user: appuser
+
+    - name: Show SSH key for authentication
+      debug:
+        msg: |
+          🔑 SSH PUBLIC KEY FOR APPUSER AUTHENTICATION 🔑
+          
+          Using the same SSH key as root user for appuser authentication.
+          This key is already configured for SSH access.
+          
+          {{ ssh_public_key.stdout }}
+          
+          This key will be used for SSH authentication as appuser.
+
+    - name: Create authorized_keys file for appuser
+      file:
+        path: /home/appuser/.ssh/authorized_keys
+        state: touch
+        mode: '0600'
+        owner: appuser
+        group: appuser
+
+    - name: Add SSH public key to authorized_keys
+      lineinfile:
+        path: /home/appuser/.ssh/authorized_keys
+        line: "{{ ssh_public_key.stdout }}"
+        state: present
+        create: yes
+        mode: '0600'
+        owner: appuser
+        group: appuser
+
+- name: Setup GitHub SSH key for appuser (using same key)
+  block:
+    - name: Copy root's SSH key for GitHub access
+      copy:
+        src: "{{ ansible_ssh_private_key_file }}"
+        dest: /home/appuser/.ssh/github_ed25519
+        mode: '0600'
+        owner: appuser
+        group: appuser
+      when: ansible_ssh_private_key_file is defined
+
+    - name: Copy root's SSH public key for GitHub access
+      copy:
+        src: "{{ ansible_ssh_private_key_file }}.pub"
+        dest: /home/appuser/.ssh/github_ed25519.pub
+        mode: '0644'
+        owner: appuser
+        group: appuser
+      when: ansible_ssh_private_key_file is defined
+
+    - name: Display GitHub SSH public key
+      command: cat /home/appuser/.ssh/github_ed25519.pub
+      register: github_ssh_public_key
+      become_user: appuser
+
+    - name: Show GitHub SSH key
+      debug:
+        msg: |
+          🔗 GITHUB SSH PUBLIC KEY 🔗
+          
+          Using the same SSH key as root user for GitHub access.
+          Add this SSH public key to GitHub for repository access:
+          
+          {{ github_ssh_public_key.stdout }}
+          
+          This key will be used for Git operations with GitHub.
+
+
+- name: Test SSH connection by executing command as appuser
+  command: whoami
+  become: yes
+  become_user: appuser
+  register: ssh_connection_test
+  ignore_errors: yes
+
+- name: Display SSH connection test result
+  debug:
+    msg: |
+      SSH Connection Test Result:
+      {% if ssh_connection_test is defined and ssh_connection_test.failed %}
+      ⚠️  WARNING: Automated SSH connection test failed
+      This could indicate SSH key configuration issues.
+      You may still proceed, but ensure manual SSH access works.
+      {% elif ssh_connection_test is defined and not ssh_connection_test.failed %}
+      ✅ Automated SSH connection test successful
+      Appuser SSH access is working correctly.
+      User: {{ ssh_connection_test.stdout }}
+      {% else %}
+      ℹ️  SSH connection test not available
+      {% endif %}
+
+- name: Final warning before root access removal
+  debug:
+    msg: |
+      🚨 FINAL WARNING 🚨
+      
+      About to remove root SSH access. After this:
+      - You will only be able to connect as 'appuser'
+      - Root SSH will be disabled
+      - Make sure you have the appuser SSH key configured
+      
+      This is your last chance to abort (Ctrl+C)
+
+- name: Pause for final confirmation
+  pause:
+    prompt: "Type 'CONFIRM' to remove root SSH access permanently"
+  register: final_confirmation
+  
+- name: Check final confirmation
+  fail:
+    msg: "Root access removal aborted by user"
+  when: final_confirmation.user_input != "CONFIRM"
+
+- name: Disable root SSH access
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^PermitRootLogin'
+    line: 'PermitRootLogin no'
+    state: present
+
+- name: Restart SSH service
+  systemd:
+    name: ssh
+    state: restarted
+
+- name: Display completion message
+  debug:
+    msg: |
+      ✅ Initial setup completed successfully!
+      
+      Root SSH access has been disabled.
+      You can now only connect as 'appuser'.
+      
+      Next steps:
+      1. Add the SSH public key to GitHub
+      2. Run: make hetzner-deploy
+      3. Or run: cd {{ project_dir }} && make staging-deploy 

@@ -1,0 +1,87 @@
+# Pre-commit configuration
+# Configure pre-commit to use public PyPI for its own dependencies
+default_language_version:
+  python: python3
+
+# Use public PyPI for pre-commit's own dependencies
+repos:
+  # Auto-remove unused imports and variables
+  - repo: https://github.com/PyCQA/autoflake
+    rev: v2.2.1
+    hooks:
+      - id: autoflake
+        args: [
+          --in-place,
+          --remove-all-unused-imports,
+          --remove-unused-variables,
+          --remove-duplicate-keys,
+          --ignore-init-module-imports,
+          --expand-star-imports,
+          --remove-rhs-for-unused-variables
+        ]
+
+  # Auto-fix PEP 8 style issues
+  - repo: https://github.com/hhatto/autopep8
+    rev: v2.0.4
+    hooks:
+      - id: autopep8
+        args: [
+          --in-place,
+          --aggressive,
+          --aggressive,
+          --max-line-length=120,
+          --ignore=E203
+        ]
+
+  # Linting and formatting with Ruff (auto-fix)
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: [--fix, --unsafe-fixes, --show-fixes]
+      - id: ruff-format
+
+  # Python code formatting with Black (final pass)
+  - repo: https://github.com/psf/black
+    rev: 23.12.1
+    hooks:
+      - id: black
+        args: [--line-length=120]
+
+  # Optional: additional static analysis with pylint at push time
+  - repo: local
+    hooks:
+      - id: pylint
+        name: pylint
+        entry: poetry run pylint
+        language: system
+        types: [python]
+        args: ["--errors-only", "--max-line-length=120"]
+
+  # Unit tests (run on push to avoid blocking commits with non-fixable failures)
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest
+        entry: poetry run pytest
+        language: system
+        pass_filenames: false
+        always_run: true
+        args: [tests/, --tb=short, -q]
+
+  # General file checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: check-added-large-files
+      - id: check-ast
+      - id: check-json
+      - id: check-toml
+      - id: debug-statements
+      - id: trailing-whitespace
+      - id: detect-private-key
+      - id: forbid-new-submodules
+      - id: check-docstring-first
+      - id: check-case-conflict

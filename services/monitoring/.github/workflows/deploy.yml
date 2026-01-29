@@ -1,0 +1,315 @@
+name: Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch_or_pr:
+        description: Branch or PR number to deploy from (e.g., master or 123 for PR #123)
+        required: true
+        default: master
+        type: string
+      environment:
+        description: Environment to deploy to (e.g., staging, production)
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - production
+
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  actions: write
+  deployments: write
+  checks: write
+  packages: write
+  pages: write
+  discussions: write
+
+env:
+  REGISTRY: docker.io
+  IMAGE_NAME: ploscope
+
+jobs:
+  deploy:
+    name: Deploy (Staging/Production)
+    runs-on: ${{ vars.GHA_RUNNER }}
+    timeout-minutes: 5
+    environment: ${{ github.event.inputs.environment }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.inputs.branch_or_pr || 'master' }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate branch for production
+        if: github.event.inputs.environment == 'production'
+        run: |
+          BRANCH="${{ github.event.inputs.branch_or_pr || 'master' }}"
+          if [ "$BRANCH" != "master" ]; then
+            echo "❌ Production deployments can only be made from the 'master' branch"
+            echo "Current branch: $BRANCH"
+            exit 1
+          fi
+          echo "✅ Production deployment validated - using master branch"
+
+      - name: Validate required secrets
+        run: |
+          if [ -z "${{ secrets.SSH_PRIVATE_KEY }}" ]; then echo "Missing required secret: SSH_PRIVATE_KEY"; exit 1; fi
+          if [ -z "${{ secrets.SSH_HOST }}" ]; then echo "Missing required secret: SSH_HOST"; exit 1; fi
+          if [ -z "${{ secrets.SSH_USER }}" ]; then echo "Missing required secret: SSH_USER"; exit 1; fi
+          if [ -z "${{ secrets.APP_PATH }}" ]; then echo "Missing required secret: APP_PATH"; exit 1; fi
+
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Add server to known hosts
+        run: |
+          ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Determine branch
+        id: version
+        run: |
+          ENVIRONMENT="${{ github.event.inputs.environment }}"
+          BRANCH_OR_PR="${{ github.event.inputs.branch_or_pr || 'master' }}"
+
+          if [ "$ENVIRONMENT" = "production" ]; then
+            echo "DEPLOY_BRANCH=master" >> $GITHUB_OUTPUT
+          else
+            # Staging deployment
+            echo "DEPLOY_BRANCH=$BRANCH_OR_PR" >> $GITHUB_OUTPUT
+          fi
+
+          echo "Deploying from branch: ${{ steps.version.outputs.DEPLOY_BRANCH }}"
+
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1.0.3
+
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          allenvs: true
+          script: |
+            set -e
+            echo "🚀 Deploying monitoring..."
+
+            # Set environment variables directly in the SSH session
+            export APP_PATH=~/ploscope/monitoring
+            export ENVIRONMENT="${{ github.event.inputs.environment }}"
+            export LOG_LEVEL=${{ vars.LOG_LEVEL }}
+            export BUILD_ENV=${{ vars.BUILD_ENV }}
+            export RESTART_POLICY=${{ vars.RESTART_POLICY }}
+            export VOLUME_MODE=${VOLUME_MODE}
+
+            export SLACK_ALERT_WEBHOOK_URL=${{ secrets.SLACK_ALERT_WEBHOOK_URL }}
+            export SLACK_ALERT_RECIPIENT=${{ vars.SLACK_ALERT_RECIPIENT }}
+
+            export GRAFANA_ADMIN_USER=${{ vars.GRAFANA_ADMIN_USER }}
+            export GRAFANA_PORT=${{ vars.GRAFANA_PORT }}
+            export GF_LOG_LEVEL=${{ vars.LOG_LEVEL }}
+            export GRAFANA_ADMIN_USER=${{ vars.GRAFANA_ADMIN_USER }}
+            export GRAFANA_ADMIN_PASSWORD=${{ vars.GRAFANA_ADMIN_PASSWORD }}
+            export GRAFANA_PORT=${{ vars.GRAFANA_PORT }}
+            export GRAFANA_DOMAIN=${{ vars.GRAFANA_DOMAIN }}
+            
+
+            export PROMETHEUS_PORT=${{ vars.PROMETHEUS_PORT }}
+            export PROMETHEUS_DOMAIN=${{ vars.PROMETHEUS_DOMAIN }}
+            export PROMETHEUS_RETENTION_DAYS=${{ vars.PROMETHEUS_RETENTION_DAYS }}
+            export PROMETHEUS_SCRAPE_INTERVAL=${{ vars.PROMETHEUS_SCRAPE_INTERVAL }}
+            export PROMETHEUS_EVALUATION_INTERVAL=${{ vars.PROMETHEUS_EVALUATION_INTERVAL }}
+            export TRAEFIK_METRICS_PORT=${{ vars.TRAEFIK_METRICS_PORT }}
+            export TRAEFIK_METRICS_PATH=${{ vars.TRAEFIK_METRICS_PATH }}
+            
+            export LOKI_PORT=${{ vars.LOKI_PORT }}
+            
+            # Production endpoints for federation (staging only)
+            export PRODUCTION_PROMETHEUS_URL=${{ vars.PRODUCTION_PROMETHEUS_URL }}
+            export PRODUCTION_PROMETHEUS_USER=${{ vars.PRODUCTION_PROMETHEUS_USER }}
+            export PRODUCTION_PROMETHEUS_PASSWORD=${{ secrets.PRODUCTION_PROMETHEUS_PASSWORD }}
+            export PRODUCTION_LOKI_URL=${{ vars.PRODUCTION_LOKI_URL }}
+            export PRODUCTION_LOKI_USER=${{ vars.PRODUCTION_LOKI_USER }}
+            export PRODUCTION_LOKI_PASSWORD=${{ secrets.PRODUCTION_LOKI_PASSWORD }}
+
+            mkdir -p ~/ploscope/monitoring
+
+            # Check if the Docker network 'plo-network-cloud' exists, create if not
+            if ! docker network inspect plo-network-cloud >/dev/null 2>&1; then
+              echo "🔗 Creating Docker network plo-network-cloud with subnet 172.30.1.0/24..."
+              docker network create --subnet=172.30.1.0/24 plo-network-cloud
+            else
+              echo "🔗 Docker network plo-network-cloud already exists."
+            fi
+
+            if [ ! -d "$HOME/ploscope/monitoring/.git" ]; then
+              echo "📥 Repository doesn't exist, cloning..."
+              cd ~/ploscope
+              git clone git@github.com:ploscope/monitoring.git monitoring
+              cd monitoring
+              git checkout ${{ steps.version.outputs.DEPLOY_BRANCH }}
+            else
+              echo "📂 Repository exists, pulling latest changes..."
+              cd ~/ploscope/monitoring
+              git fetch origin
+              git reset --hard origin/${{ steps.version.outputs.DEPLOY_BRANCH }}
+            fi
+
+            # Check if the Docker network 'plo-network-cloud' exists, create if not
+            if ! docker network inspect plo-network-cloud >/dev/null 2>&1; then
+              echo "🔗 Creating Docker network plo-network-cloud..."
+              docker network create --subnet=172.30.1.0/24 plo-network-cloud
+            else
+              echo "🔗 Docker network plo-network-cloud already exists."
+            fi
+
+            # Create volumes if they don't exist
+            docker volume create prometheus_data || true
+            docker volume create loki_data || true
+            docker volume create alloy_data || true
+            docker volume create shared_logs || true
+
+            # Clean up old Docker log files to prevent Alloy startup issues
+            echo "🧹 Running cleanup of old Docker log files..."
+            if [ -f "./cleanup-old-logs.sh" ]; then
+              chmod +x ./cleanup-old-logs.sh
+              ./cleanup-old-logs.sh
+            else
+              echo "⚠️  cleanup-old-logs.sh not found, skipping cleanup"
+            fi
+
+            # Prepare Grafana datasource files with environment variable substitution
+            if [ "$ENVIRONMENT" != "production" ]; then
+              echo "📝 Preparing Grafana datasource files..."
+              
+              # Ensure envsubst is available (install gettext-base if not present)
+              if ! command -v envsubst >/dev/null 2>&1; then
+                echo "⚠️  envsubst not found, installing gettext-base..."
+                if command -v apt-get >/dev/null 2>&1; then
+                  sudo apt-get update && sudo apt-get install -y gettext-base
+                elif command -v yum >/dev/null 2>&1; then
+                  sudo yum install -y gettext
+                else
+                  echo "❌ Cannot install envsubst automatically. Please install gettext-base/gettext package."
+                  exit 1
+                fi
+              fi
+              
+              # Make script executable
+              if [ -f "./prepare-grafana-datasources.sh" ]; then
+                chmod +x ./prepare-grafana-datasources.sh
+                echo "✅ Running prepare-grafana-datasources.sh..."
+                ./prepare-grafana-datasources.sh
+                
+                # Verify processed file was created
+                if [ -f "./grafana-config/grafana-datasources-provisioning-processed/datasources.yml" ]; then
+                  echo "✅ Datasource file processed successfully"
+                  echo "Preview of processed file (URLs only):"
+                  grep -E "(url:|basicAuthUser:)" ./grafana-config/grafana-datasources-provisioning-processed/datasources.yml | head -10
+                else
+                  echo "❌ Processed datasource file not found after running prepare script"
+                  exit 1
+                fi
+              else
+                echo "❌ prepare-grafana-datasources.sh not found!"
+                exit 1
+              fi
+            fi
+
+            if [ "$ENVIRONMENT" = "production" ]; then
+              echo "🚀 Deploying production services (prometheus, cadvisor, alloy, loki)..."
+              # Use --env-file only if file exists, otherwise rely on exported variables
+              if [ -f "env.production" ]; then
+                docker compose -f docker-compose.yml --env-file env.production down
+                docker compose -f docker-compose.yml --env-file env.production up -d prometheus cadvisor alloy loki
+              else
+                echo "⚠️  env.production file not found, using exported environment variables"
+              docker compose -f docker-compose.yml down
+              docker compose -f docker-compose.yml up -d prometheus cadvisor alloy loki
+              fi
+            else
+              echo "🚀 Deploying all staging services..."
+              docker volume create grafana_data || true
+              # Use --env-file only if file exists, otherwise rely on exported variables
+              if [ -f "env.staging" ]; then
+                docker compose -f docker-compose.yml --env-file env.staging down
+                docker compose -f docker-compose.yml --env-file env.staging up -d
+              else
+                echo "⚠️  env.staging file not found, using exported environment variables"
+              docker compose -f docker-compose.yml down
+              docker compose -f docker-compose.yml up -d
+              fi
+            fi
+
+            # Wait for the prometheus container to become healthy before exiting
+            echo "⏳ Waiting for prometheus container to become healthy..."
+            for i in {1..30}; do
+              STATUS=$(docker inspect --format='{{.State.Health.Status}}' prometheus-${ENVIRONMENT} 2>/dev/null || echo "notfound")
+              if [ "$STATUS" = "healthy" ]; then
+                echo "✅ prometheus container is healthy."
+                break
+              elif [ "$STATUS" = "unhealthy" ]; then
+                echo "❌ prometheus container is unhealthy."
+                exit 1
+              elif [ "$STATUS" = "notfound" ]; then
+                echo "⚠️  prometheus container not found. Waiting..."
+              else
+                echo "⏳ Waiting for health status... (current: $STATUS)"
+              fi
+              sleep 5
+              if [ $i -eq 30 ]; then
+                echo "❌ Timeout waiting for prometheus container to become healthy."
+                exit 1
+              fi
+            done
+
+            # Wait for the grafana container to become healthy before exiting (staging only)
+            if [ "$ENVIRONMENT" != "production" ]; then
+              echo "⏳ Waiting for grafana container to become healthy..."
+              for i in {1..30}; do
+                STATUS=$(docker inspect --format='{{.State.Health.Status}}' grafana-${ENVIRONMENT} 2>/dev/null || echo "notfound")
+                if [ "$STATUS" = "healthy" ]; then
+                  echo "✅ grafana container is healthy."
+                  break
+                elif [ "$STATUS" = "unhealthy" ]; then
+                  echo "❌ grafana container is unhealthy."
+                  exit 1
+                elif [ "$STATUS" = "notfound" ]; then
+                  echo "⚠️  grafana container not found. Waiting..."
+                else
+                  echo "⏳ Waiting for health status... (current: $STATUS)"
+                fi
+                sleep 5
+                if [ $i -eq 30 ]; then
+                  echo "❌ Timeout waiting for grafana container to become healthy."
+                  exit 1
+                fi
+              done
+            fi
+
+            # Wait for the loki container to become healthy before exiting
+            echo "⏳ Waiting for loki container to become healthy..."
+            for i in {1..30}; do
+              STATUS=$(docker inspect --format='{{.State.Health.Status}}' loki-${ENVIRONMENT} 2>/dev/null || echo "notfound")
+              if [ "$STATUS" = "healthy" ]; then
+                echo "✅ loki container is healthy."
+                break
+              elif [ "$STATUS" = "unhealthy" ]; then
+                echo "❌ loki container is unhealthy."
+                exit 1
+              elif [ "$STATUS" = "notfound" ]; then
+                echo "⚠️  loki container not found. Waiting..."
+              else
+                echo "⏳ Waiting for health status... (current: $STATUS)"
+              fi
+              sleep 5
+              if [ $i -eq 30 ]; then
+                echo "❌ Timeout waiting for loki container to become healthy."
+                exit 1
+              fi
+            done

@@ -1,0 +1,350 @@
+name: RabbitMQ CI/CD
+
+on:
+  pull_request:
+    branches: [main, master, develop]
+    paths:
+      - '*'
+  push:
+    branches: [main, master, develop]
+    paths:
+      - '*'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'local'
+        type: choice
+        options:
+          - staging
+          - production
+      skip_tests:
+        description: 'Skip tests'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  REGISTRY: docker.io
+  IMAGE_NAME: ploscope/rabbitmq
+
+jobs:
+
+
+  pre-docker-build:
+    timeout-minutes: 4
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: true
+    name: Pre Build
+    runs-on: ${{ vars.GHA_RUNNER }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push RabbitMQ init image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ploscope/rabbitmq-init:pr-test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+  static-analysis:
+    timeout-minutes: 2
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: true
+    name: Static Analysis
+    runs-on: ${{ vars.GHA_RUNNER }}
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Install poetry
+        if: ${{ vars.GHA_RUNNER }} != 'self-hosted'
+        uses: abatilo/actions-poetry@v4
+
+      - name: Install poetry manually (fallback for self-hosted runners)
+        if: ${{ vars.GHA_RUNNER }} == 'self-hosted'
+        run: |
+          curl -sL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - uses: actions/cache@v3
+        name: Define a cache for the virtual environment based on the dependencies lock file
+        with:
+          path: ./.venv
+          key: venv-${{ hashFiles('rabbitmq/poetry.lock') }}
+
+      - name: Install dependencies
+        run: |
+          poetry install --with dev
+        env:
+          POETRY_HTTP_BASIC_NEXUS_INTERNAL_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          POETRY_HTTP_BASIC_NEXUS_INTERNAL_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+
+      - name: Security analysis with bandit
+        run: |
+          poetry run bandit -r env.py versions/ init_rabbitmq_queues.py -f txt -o bandit-report.txt || true
+          echo "Bandit security analysis completed. Check bandit-report.txt for details."
+
+      - name: SQL analysis with sqlfluff
+        run: |
+          poetry run sqlfluff lint versions/ --format json > sqlfluff-report.json 2>&1 || true
+          poetry run sqlfluff lint versions/ --format human > sqlfluff-report.txt 2>&1 || true
+          echo "SQLFluff analysis completed. Check sqlfluff-report.txt for details."
+
+      - name: YAML linting
+        run: |
+          poetry run yamllint docker-compose.yml || true
+
+      - name: Run pre-commit hooks
+        run: |
+          poetry run pre-commit install
+          poetry run pre-commit run --all-files
+
+      - name: Upload security analysis results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-analysis-reports
+          path: |
+            bandit-report.json
+            bandit-report.txt
+            sqlfluff-report.json
+            sqlfluff-report.txt
+
+      - name: Display security analysis summary
+        if: always()
+        run: |
+          echo "=== Security Analysis Summary ==="
+          if [ -f bandit-report.txt ]; then
+            echo "Bandit Security Issues:"
+            cat bandit-report.txt | head -20
+          else
+            echo "No security issues found by Bandit"
+          fi
+
+          echo ""
+          echo "=== SQL Analysis Summary ==="
+          if [ -f sqlfluff-report.txt ]; then
+            echo "SQLFluff Issues:"
+            cat sqlfluff-report.txt | head -20
+          else
+            echo "No SQL issues found by SQLFluff"
+          fi
+
+  test-integrated-services:
+    timeout-minutes: 2
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: true
+    name: Test Integrated Services
+    runs-on: ${{ vars.GHA_RUNNER }}
+    needs: [pre-docker-build]
+    permissions:
+      contents: read
+      packages: read
+    if: github.event.inputs.skip_tests != 'true' || github.event_name == 'push'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+      - name: Install poetry
+        if: ${{ vars.GHA_RUNNER }} != 'self-hosted'
+        uses: abatilo/actions-poetry@v4
+
+      - name: Install poetry manually (fallback for self-hosted runners)
+        if: ${{ vars.GHA_RUNNER }} == 'self-hosted'
+        run: |
+          curl -sL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - uses: actions/cache@v3
+        name: Define a cache for the virtual environment based on the dependencies lock file
+        with:
+          path: ./.venv
+          key: venv-${{ hashFiles('poetry.lock') }}
+
+      - name: Install dependencies
+        run: |
+          poetry install --with dev
+        env:
+          POETRY_HTTP_BASIC_NEXUS_INTERNAL_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          POETRY_HTTP_BASIC_NEXUS_INTERNAL_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+
+      - name: Start integrated services with Docker Compose
+        run: |
+          echo "Starting integrated services (database + RabbitMQ)..."
+          docker login -u ${{ secrets.DOCKERHUB_USERNAME }} -p ${{ secrets.DOCKERHUB_TOKEN }}
+
+          export ENVIRONMENT=pr-test
+
+
+          # Check if the Docker network 'plo-network-cloud' exists, create if not
+          echo "🔗 Checking Docker network plo-network-cloud..."
+          if ! docker network inspect plo-network-cloud >/dev/null 2>&1; then
+            echo "🔗 Creating Docker network plo-network-cloud with subnet 172.30.1.0/24..."
+            if docker network create --subnet=172.30.1.0/24 plo-network-cloud; then
+              echo "✅ Docker network plo-network-cloud created successfully."
+            else
+              echo "❌ Failed to create Docker network plo-network-cloud."
+              echo "📋 Available networks:"
+              docker network ls
+              exit 1
+            fi
+          else
+            echo "✅ Docker network plo-network-cloud already exists."
+          fi
+
+          # Verify network was created successfully
+          echo "🔍 Verifying network configuration..."
+          docker network inspect plo-network-cloud --format '{{.Name}}: {{.IPAM.Config}}' || {
+            echo "❌ Network verification failed"
+            exit 1
+          }
+
+          # Check if Docker volumes exist, create if not
+          echo "🔗 Checking Docker volumes..."
+          if ! docker volume inspect rabbitmq_data >/dev/null 2>&1; then
+            echo "🔗 Creating Docker volume rabbitmq_data..."
+            docker volume create rabbitmq_data
+          fi
+
+          if ! docker volume inspect traefik_certs >/dev/null 2>&1; then
+            echo "🔗 Creating Docker volume traefik_certs..."
+            docker volume create traefik_certs
+          fi
+
+          # Final check before starting services
+          echo "🔍 Final network check before starting services..."
+          if ! docker network inspect plo-network-cloud >/dev/null 2>&1; then
+            echo "❌ Network plo-network-cloud not found before starting services!"
+            echo "📋 Available networks:"
+            docker network ls
+            exit 1
+          fi
+          echo "✅ Network plo-network-cloud confirmed before starting services."
+
+          docker compose build
+          docker compose up -d rabbitmq
+
+          echo "Waiting for rabbitmq to be healthy..."
+          # Wait for RabbitMQ to be ready (max 45 seconds)
+          for i in {1..23}; do
+            if [ "$(docker inspect --format='{{.State.Health.Status}}' rabbitmq-${ENVIRONMENT:-local} 2>/dev/null)" = "healthy" ]; then
+              echo "RabbitMQ is healthy!"
+              break
+            fi
+            echo "Waiting for RabbitMQ... ($i/45)"
+            sleep 2
+          done
+
+          # Final check
+          if [ "$(docker inspect --format='{{.State.Health.Status}}' rabbitmq-${ENVIRONMENT:-local} 2>/dev/null)" != "healthy" ]; then
+            echo "ERROR: RabbitMQ failed to become healthy within 60 seconds"
+            echo "=== RabbitMQ Logs ==="
+            docker compose logs rabbitmq
+            echo "=== All Services Status ==="
+            docker compose ps -a
+            exit 1
+          fi
+
+          echo "Validating RabbitMQ migration (init) worked..."
+
+          # Run the rabbitmq-init container to initialize queues and check for success
+          docker compose up --exit-code-from rabbitmq-init rabbitmq-init
+
+          if [ $? -ne 0 ]; then
+            echo "ERROR: RabbitMQ migration/init failed!"
+            echo "=== RabbitMQ Init Logs ==="
+            docker compose logs rabbitmq-init
+            exit 1
+          else
+            echo "RabbitMQ migration/init completed successfully."
+          fi
+
+
+      - name: Check for failed services and show logs
+        if: failure()
+        run: |
+          echo "=== Checking for failed services ==="
+          docker compose ps -a
+          echo ""
+          echo "=== All service logs ==="
+          docker compose logs
+          echo ""
+          echo "=== Failed service logs (if any) ==="
+          for service in $(docker compose ps -q --filter "status=exited"); do
+            echo "=== Logs for container $service ==="
+            docker logs $service
+            echo ""
+          done
+      - name: Cleanup integrated services
+        if: always()
+        run: |
+          echo "Shutting down integrated services..."
+          docker compose down
+          echo "Integrated services cleanup completed!"
+
+  docker-build:
+    timeout-minutes: 4
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: true
+    name: Build and Push Docker Images
+    runs-on: ${{ vars.GHA_RUNNER }}
+    permissions:
+      contents: read
+      packages: write
+    needs: [static-analysis, test-integrated-services]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push RabbitMQ init image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ploscope/rabbitmq-init:latest
+            ploscope/rabbitmq-init:staging
+            if: ${{ github.ref == 'refs/heads/master' }}
+              ploscope/rabbitmq-init:production
+            if: ${{ startsWith(github.ref, 'refs/tags/') }}
+              ploscope/rabbitmq-init:${{ github.ref }}
+            else
+              ploscope/rabbitmq-init:${{ github.sha }}
+            fi
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

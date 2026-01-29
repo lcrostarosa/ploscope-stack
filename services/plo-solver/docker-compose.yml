@@ -1,0 +1,487 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: plosolver-rabbitmq-${ENVIRONMENT:-development}
+    labels:
+      - "traefik.enable=true"
+    ports:
+      - "5672:5672"    # AMQP port
+      - "15672:15672"  # Management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - traefik_certs:/etc/traefik-certs:ro
+      - ./scripts/operations/cert-monitor.sh:/bin/cert-monitor.sh:ro
+      - ./scripts/utilities/entrypoint-wrapper.sh:/bin/entrypoint-wrapper.sh:ro
+    entrypoint: ["/bin/entrypoint-wrapper.sh", "docker-entrypoint.sh"]
+    command: ["rabbitmq-server"]
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-plosolver}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-dev_password_2024}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-/plosolver}
+      CERT_DOMAIN: rabbitmq.ploscope.com
+      CERT_FILE: /etc/rabbitmq/certs/rabbitmq.crt
+      KEY_FILE: /etc/rabbitmq/certs/rabbitmq.key
+      SERVICE_NAME: rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+  # Portainer for Docker management (SSH-only access)
+  portainer:
+    image: portainer/portainer-ce:alpine-sts
+    container_name: plosolver-portainer-${ENVIRONMENT:-development}
+    labels:
+      - "traefik.enable=true"
+    command: -H unix:///var/run/docker.sock
+    ports:
+      - "9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+      - traefik_certs:/etc/traefik-certs:ro
+      - ./scripts/operations/cert-monitor.sh:/scripts/cert-monitor.sh:ro
+      - ./scripts/utilities/entrypoint-wrapper.sh:/scripts/entrypoint-wrapper.sh:ro
+    entrypoint: ["/scripts/entrypoint-wrapper.sh", "/portainer"]
+    environment:
+      - CERT_DOMAIN=portainer.ploscope.com
+      - CERT_FILE=/data/certs/portainer.crt
+      - KEY_FILE=/data/certs/portainer.key
+      - SERVICE_NAME=portainer
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9000/api/system/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 180s
+    restart: unless-stopped
+
+  # Elasticsearch
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.0.3
+    container_name: plosolver-elasticsearch-${ENVIRONMENT:-development}
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=true
+      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD:-changeme}
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+      - elasticsearch_logs:/usr/share/elasticsearch/logs
+      - ./scripts/operations/elasticsearch-health-check.sh:/scripts/elasticsearch-health-check.sh:ro
+    ports:
+      - "9200:9200"
+    healthcheck:
+      test: ["CMD-SHELL", "/scripts/elasticsearch-health-check.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+  # Logstash
+  logstash:
+    image: docker.elastic.co/logstash/logstash:9.0.3
+    container_name: plosolver-logstash-${ENVIRONMENT:-development}
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - ELASTICSEARCH_USERNAME=logstash_writer
+      - ELASTICSEARCH_PASSWORD=${ELASTIC_PASSWORD:-changeme}
+    volumes:
+      - ${LOG_PATH:-./logs}:/var/log/plosolver
+      - ./server/logstash/config/logstash.yml:/usr/share/logstash/config/logstash.yml
+      - ./server/logstash/pipeline:/usr/share/logstash/pipeline
+      - logstash_data:/usr/share/logstash/data
+      - /var/lib/docker/containers:/var/lib/docker/containers
+      - ${SYSTEM_LOG_PATH:-/var/log}:/var/log
+      - ${DOCKER_LOG_PATH:-./logs/docker.log}:/var/log/docker.log
+    ports:
+      - "9600:9600"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9600/_node/stats || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+  # Kibana
+  kibana:
+    image: docker.elastic.co/kibana/kibana:9.0.3
+    container_name: plosolver-kibana-${ENVIRONMENT:-development}
+    labels:
+      - "traefik.enable=true"
+    volumes:
+      - kibana_data:/usr/share/kibana/data
+      - traefik_certs:/etc/traefik-certs:ro
+      - ./scripts/operations/cert-monitor.sh:/bin/cert-monitor.sh:ro
+      - ./scripts/utilities/entrypoint-wrapper.sh:/bin/entrypoint-wrapper.sh:ro
+      - ./server/kibana/kibana.yml:/usr/share/kibana/config/kibana.yml:ro
+    entrypoint: ["/bin/entrypoint-wrapper.sh", "/usr/local/bin/kibana-docker"]
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - ELASTICSEARCH_USERNAME=kibana_system
+      - ELASTICSEARCH_PASSWORD=${ELASTIC_PASSWORD:-changeme}
+      - XPACK_SECURITY_ENCRYPTIONKEY=kibana_encryption_key_32chars_min_plosolver_dev_2024_secure
+      - XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY=saved_objects_encryption_key_32chars_min_plosolver_dev_2024
+      - XPACK_REPORTING_ENCRYPTIONKEY=reporting_encryption_key_32chars_min_plosolver_dev_2024_sec
+      - CERT_DOMAIN=kibana.ploscope.com
+      - CERT_FILE=/usr/share/kibana/config/certs/kibana.crt
+      - KEY_FILE=/usr/share/kibana/config/certs/kibana.key
+      - SERVICE_NAME=kibana
+    ports:
+      - "5601:5601"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5601/api/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+  # Filebeat for infrastructure monitoring
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:9.0.3
+    container_name: plosolver-filebeat-${ENVIRONMENT:-development}
+    user: root
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - ELASTICSEARCH_USERNAME=beats_writer
+      - ELASTICSEARCH_PASSWORD=${ELASTIC_PASSWORD:-changeme}
+    volumes:
+      - ./server/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml
+      - /var/lib/docker/containers:/var/lib/docker/containers
+      - ${SYSTEM_LOG_PATH:-/var/log}:/var/log
+      - /proc:/hostfs/proc
+      - /sys/fs/cgroup:/hostfs/sys/fs/cgroup
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "5066:5066"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+      kibana:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5066/api/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Metricbeat for system and Docker metrics
+  metricbeat:
+    image: docker.elastic.co/beats/metricbeat:9.0.3
+    container_name: plosolver-metricbeat-${ENVIRONMENT:-development}
+    user: root
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - ELASTICSEARCH_USERNAME=beats_writer
+      - ELASTICSEARCH_PASSWORD=${ELASTIC_PASSWORD:-changeme}
+    volumes:
+      - ./server/metricbeat/metricbeat.yml:/usr/share/metricbeat/metricbeat.yml:ro
+      - ./server/metricbeat/modules.d:/usr/share/metricbeat/modules.d:ro
+      - /proc:/hostfs/proc:ro
+      - /sys/fs/cgroup:/hostfs/sys/fs/cgroup:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    ports:
+      - "5067:5067"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+      kibana:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5067/api/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # OpenVPN Access Server for secure access to management interfaces
+  openvpn:
+    image: openvpn/openvpn-as:latest
+    container_name: plosolver-openvpn-${ENVIRONMENT:-development}
+    labels:
+      - "traefik.enable=true"
+    ports:
+      - "1194:1194/udp"  # OpenVPN UDP port
+      - "9443:443/tcp"   # OpenVPN Access Server web interface (mapped to avoid conflict)
+      - "943:943/tcp"    # OpenVPN Access Server admin interface
+    volumes:
+      - openvpn_config:/openvpn/etc
+      - ./server/openvpn/as.conf:/openvpn/etc/as.conf
+      - traefik_certs:/etc/traefik-certs:ro
+    command: ["/docker-entrypoint.sh", "/usr/local/openvpn_as/scripts/openvpnas", "--nodaemon", "--pidfile=/ovpn/tmp/openvpn.pid"]
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - VPN_DOMAIN=vpn.ploscope.com
+      - CERT_DOMAIN=vpn.ploscope.com
+      - CERT_FILE=/openvpn/etc/web-ssl/server.crt
+      - KEY_FILE=/openvpn/etc/web-ssl/server.key
+      - SERVICE_NAME=openvpn
+      - RESTART_COMMAND="pkill -HUP openvpnas || true"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "pgrep", "openvpn"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      - traefik
+
+  traefik:
+    image: traefik:v3.4.4
+    container_name: plosolver-traefik-${ENVIRONMENT:-development}
+    command:
+      - "--configfile=/etc/traefik/traefik.yml"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik_certs:/etc/certs
+      - ./server/traefik/${TRAEFIK_CONFIG:-staging}/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./server/traefik/${TRAEFIK_CONFIG:-staging}/dynamic.docker.yml:/etc/traefik/dynamic.yml:ro
+      - ${TRAEFIK_LOG_PATH:-./logs/traefik}:/var/log/traefik
+    environment:
+      - TRAEFIK_DOMAIN=${TRAEFIK_DOMAIN:-localhost}
+      - ACME_EMAIL=${ACME_EMAIL:-}
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/api/http/routers"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: src/frontend
+      dockerfile: Dockerfile
+      args:
+        BUILDKIT_INLINE_CACHE: 1
+    container_name: plosolver-frontend-${ENVIRONMENT:-development}
+    environment:
+      - NODE_ENV=production
+      - REACT_APP_API_URL=${REACT_APP_API_URL:-/api}
+      - REACT_APP_GOOGLE_CLIENT_ID=${REACT_APP_GOOGLE_CLIENT_ID:-}
+      - REACT_APP_FACEBOOK_APP_ID=${REACT_APP_FACEBOOK_APP_ID:-}
+      - REACT_APP_FEATURE_TRAINING_MODE_ENABLED=${REACT_APP_FEATURE_TRAINING_MODE_ENABLED:-false}
+      - REACT_APP_FEATURE_SOLVER_MODE_ENABLED=${REACT_APP_FEATURE_SOLVER_MODE_ENABLED:-true}
+      - REACT_APP_FEATURE_PLAYER_PROFILES_ENABLED=${REACT_APP_FEATURE_PLAYER_PROFILES_ENABLED:-false}
+      - REACT_APP_FEATURE_HAND_HISTORY_ANALYZER_ENABLED=${REACT_APP_FEATURE_HAND_HISTORY_ANALYZER_ENABLED:-false}
+      - REACT_APP_FEATURE_TOURNAMENT_MODE_ENABLED=${REACT_APP_FEATURE_TOURNAMENT_MODE_ENABLED:-true}
+      - REACT_APP_FEATURE_CASH_GAME_MODE_ENABLED=${REACT_APP_FEATURE_CASH_GAME_MODE_ENABLED:-false}
+      - REACT_APP_FEATURE_CUSTOM_MODE_ENABLED=${REACT_APP_FEATURE_CUSTOM_MODE_ENABLED:-false}
+    depends_on:
+      traefik:
+        condition: service_healthy
+      db-migrate:
+        condition: service_completed_successfully
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: src/backend
+      dockerfile: Dockerfile
+      args:
+        BUILDKIT_INLINE_CACHE: 1
+    container_name: plosolver-backend-${ENVIRONMENT:-development}
+    labels:
+      - "traefik.enable=true"
+    ports:
+      - "5001:5001"
+    volumes:
+      - ./src/backend/services:/app/backend/services
+      - ./logs:/app/logs
+    environment:
+      - FLASK_APP=backend.core.app
+      - FLASK_DEBUG=${FLASK_DEBUG:-false}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-plosolver}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - SECRET_KEY=${SECRET_KEY:-dev-secret-key-change-in-production}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-your-jwt-secret-key-here}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
+      - DISCOURSE_URL=${DISCOURSE_URL:-http://localhost:4080}
+      - DISCOURSE_DOMAIN=${DISCOURSE_DOMAIN:-forum.localhost}
+      - DISCOURSE_SSO_SECRET=${DISCOURSE_SSO_SECRET:-change-this-secret}
+      - NEW_RELIC_LICENSE_KEY=${NEW_RELIC_LICENSE_KEY:-}
+      - NEW_RELIC_ENVIRONMENT=${NEW_RELIC_ENVIRONMENT:-production}
+      - QUEUE_PROVIDER=${QUEUE_PROVIDER:-rabbitmq}
+      - RABBITMQ_HOST=${RABBITMQ_HOST:-rabbitmq}
+      - RABBITMQ_PORT=${RABBITMQ_PORT:-5672}
+      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-plosolver}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-dev_password_2024}
+      - RABBITMQ_VHOST=${RABBITMQ_VHOST:-/plosolver}
+      - RABBITMQ_SPOT_QUEUE=${RABBITMQ_SPOT_QUEUE:-spot-processing}
+      - RABBITMQ_SOLVER_QUEUE=${RABBITMQ_SOLVER_QUEUE:-solver-processing}
+      - RABBITMQ_SPOT_DLQ=${RABBITMQ_SPOT_DLQ:-spot-processing-dlq}
+      - RABBITMQ_SOLVER_DLQ=${RABBITMQ_SOLVER_DLQ:-solver-processing-dlq}
+      - PGPASSWORD=${POSTGRES_PASSWORD:-postgres}
+    depends_on:
+      db:
+        condition: service_healthy
+      traefik:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      db-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5001/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+  db-migrate:
+    build:
+      context: src/db-init
+      dockerfile: Dockerfile
+      args:
+        BUILDKIT_INLINE_CACHE: 1
+    container_name: plosolver-db-migrate-${ENVIRONMENT:-development}
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_MIGRATE_HOST=${POSTGRES_HOST}
+      - PGPASSWORD=${POSTGRES_PASSWORD:-postgres}
+    depends_on:
+      db:
+        condition: service_healthy
+    
+    restart: "no"
+
+  db:
+    image: postgres:15
+    container_name: plosolver-db-${ENVIRONMENT:-development}
+    ports:
+      - "5432:5432"  # Expose for integration tests
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-plosolver}
+    volumes:
+      - ${POSTGRES_DATA_PATH:-./data/postgres}:/var/lib/postgresql/data
+      - ${POSTGRES_BACKUP_PATH:-./backups}:/backups:rw
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  coredns:
+    image: coredns/coredns:1.11.1
+    container_name: plosolver-coredns-${ENVIRONMENT:-development}
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: plosolver-prometheus
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./data/prometheus:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: plosolver-grafana
+    ports:
+      - "3006:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD}
+      - GF_USERS_ALLOW_SIGN_UP=${GF_USERS_ALLOW_SIGN_UP}
+    volumes:
+      - ./data/grafana:/var/lib/grafana
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/login"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+
+
+  celeryworker:
+    build:
+      context: src/celery
+      dockerfile: Dockerfile
+      args:
+        BUILDKIT_INLINE_CACHE: 1
+    container_name: plosolver-celeryworker-${ENVIRONMENT:-development}
+    environment:
+      - CELERY_BROKER_URL=amqp://plosolver:${RABBITMQ_PASSWORD:-dev_password_2024}@rabbitmq:5672/plosolver
+      - CELERY_RESULT_BACKEND=rpc://
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-plosolver}
+      - PGPASSWORD=${POSTGRES_PASSWORD:-postgres}
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      db-migrate:
+        condition: service_completed_successfully
+    networks:
+      plo-network:
+        ipv4_address: 172.18.1.22
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+volumes:
+  traefik_certs:
+  traefik_letsencrypt:
+  rabbitmq_data:
+  elasticsearch_data:
+  elasticsearch_logs:
+  logstash_data:
+  kibana_data:
+  portainer_data:
+  openvpn_config:
+  openvpn_certs:
+ 
+
+networks:
+  plo-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.18.1.0/24 

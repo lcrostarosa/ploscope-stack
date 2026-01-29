@@ -1,0 +1,90 @@
+# Local Development Dynamic Configuration
+# This file contains routing rules and service definitions for local development
+
+http:
+  routers:
+    # Backend API routes - HTTP for local development
+    backend-api:
+      rule: "PathPrefix(`/api`)"
+      service: backend
+      entrypoints:
+        - web
+      priority: 100
+      middlewares:
+        - cors-headers
+    
+    # Frontend routes - HTTP for local development
+    frontend:
+      rule: "Host(`localhost`)"
+      service: frontend
+      entrypoints:
+        - web
+      priority: 1
+      middlewares:
+        - cors-headers
+
+    # WebSocket routes - HTTP for local development
+    websocket:
+      rule: "PathPrefix(`/socket.io`)"
+      priority: 10
+      service: backend
+      entrypoints:
+        - web
+      middlewares:
+        - websocket-headers
+
+  services:
+    backend:
+      loadBalancer:
+        servers:
+          - url: "http://backend:5001"
+        passHostHeader: true
+        responseForwarding:
+          flushInterval: "100ms"
+        sticky:
+          cookie:
+            name: "backend-sticky"
+    
+    frontend:
+      loadBalancer:
+        servers:
+          - url: "http://frontend:3001"
+
+  middlewares:
+    cors-headers:
+      headers:
+        accessControlAllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - PATCH
+          - OPTIONS
+        accessControlAllowHeaders:
+          - "*"
+        accessControlAllowOriginList:
+          - "*"
+        accessControlMaxAge: 100
+        addVaryHeader: true
+    
+    websocket-headers:
+      headers:
+        accessControlAllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - PATCH
+          - OPTIONS
+        accessControlAllowHeaders:
+          - "*"
+        accessControlAllowOriginList:
+          - "*"
+        accessControlMaxAge: 100
+        addVaryHeader: true
+        customRequestHeaders:
+          Upgrade: "websocket"
+          Connection: "upgrade"
+        customResponseHeaders:
+          Upgrade: "websocket"
+          Connection: "upgrade" 

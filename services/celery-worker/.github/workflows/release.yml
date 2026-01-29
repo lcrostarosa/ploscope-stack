@@ -1,0 +1,189 @@
+name: Release Management
+
+# This workflow is triggered when code is merged into the master branch
+# It handles both automatic releases (via conventional commits) and manual releases
+on:
+  push:
+    branches: [master]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: 'Release type (major, minor, patch)'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - major
+          - minor
+          - patch
+      prerelease:
+        description: 'Mark as prerelease'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  IMAGE_NAME: ploscope
+
+jobs:
+  release:
+    name: Release Management
+    runs-on: ${{ vars.GHA_RUNNER }}
+    # Only run on pushes to master, or when manually dispatched
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || github.event_name == 'workflow_dispatch'
+    outputs:
+      release_tag: ${{ steps.release.outputs.tag }}
+      release_version: ${{ steps.release.outputs.version }}
+    permissions:
+      contents: write
+      packages: write
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.PAT }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install poetry
+        if: vars.GHA_RUNNER != 'self-hosted'
+        uses: abatilo/actions-poetry@v4
+
+      - name: Install poetry manually (fallback for self-hosted runners)
+        if: vars.GHA_RUNNER == 'self-hosted'
+        run: |
+          curl -sL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Create release
+        id: release
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # Manual release
+            current_version=$(poetry version -s)
+            release_type="${{ github.event.inputs.release_type }}"
+
+            # Parse current version
+            IFS='.' read -r major minor patch <<< "$current_version"
+
+            case "$release_type" in
+              "major")
+                major=$((major + 1))
+                minor=0
+                patch=0
+                ;;
+              "minor")
+                minor=$((minor + 1))
+                patch=0
+                ;;
+              "patch")
+                patch=$((patch + 1))
+                ;;
+            esac
+
+            next_version="$major.$minor.$patch"
+            tag="v$next_version"
+
+            # Update pyproject.toml version using Poetry
+            poetry version $next_version
+
+            # Commit version bump
+            git add pyproject.toml
+            git commit -m "chore: bump version to $next_version [skip ci]"
+
+            # Create tag
+            git tag -a $tag -m "Release $tag"
+            git push origin $tag
+            git push origin HEAD
+
+            # Create GitHub release
+            gh release create $tag \
+              --title "Release $tag" \
+              --generate-notes \
+              ${{ github.event.inputs.prerelease == 'true' && '--prerelease' || '' }}
+          else
+            # Automatic release based on conventional commits
+            # Check if there are any conventional commits since last release
+            last_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+
+            if [ -z "$last_tag" ]; then
+              # No previous tags, check all commits for conventional commits
+              commits_since_last=$(git log --oneline --grep="^feat\|^fix\|^BREAKING CHANGE" || true)
+            else
+              # Check commits since last tag
+              commits_since_last=$(git log --oneline $last_tag..HEAD --grep="^feat\|^fix\|^BREAKING CHANGE" || true)
+            fi
+
+            if [ -n "$commits_since_last" ]; then
+              # Determine release type based on commits
+              has_breaking=$(echo "$commits_since_last" | grep -c "BREAKING CHANGE" 2>/dev/null || echo "0")
+              has_features=$(echo "$commits_since_last" | grep -c "^feat" 2>/dev/null || echo "0")
+              has_fixes=$(echo "$commits_since_last" | grep -c "^fix" 2>/dev/null || echo "0")
+
+              # Ensure we have numeric values
+              has_breaking=${has_breaking:-0}
+              has_features=${has_features:-0}
+              has_fixes=${has_fixes:-0}
+
+              current_version=$(poetry version -s)
+              IFS='.' read -r major minor patch <<< "$current_version"
+
+              if [ "$has_breaking" -gt 0 ]; then
+                # Major version bump for breaking changes
+                major=$((major + 1))
+                minor=0
+                patch=0
+                release_type="major"
+              elif [ "$has_features" -gt 0 ]; then
+                # Minor version bump for new features
+                minor=$((minor + 1))
+                patch=0
+                release_type="minor"
+              else
+                # Patch version bump for fixes
+                patch=$((patch + 1))
+                release_type="patch"
+              fi
+
+              next_version="$major.$minor.$patch"
+              tag="v$next_version"
+
+              # Update pyproject.toml version using Poetry
+              poetry version $next_version
+
+              # Commit version bump
+              git add pyproject.toml
+              git commit -m "chore: bump version to $next_version [skip ci]"
+
+              # Create tag
+              git tag -a $tag -m "Release $tag"
+              git push origin $tag
+              git push origin HEAD
+
+              # Create GitHub release
+              gh release create $tag \
+                --title "Release $tag" \
+                --generate-notes
+            else
+              echo "No conventional commits found since last release. Skipping automatic release."
+              exit 0
+            fi
+          fi
+
+          echo "tag=$tag" >> $GITHUB_OUTPUT
+          echo "version=$next_version" >> $GITHUB_OUTPUT
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT }}
+          GH_TOKEN: ${{ secrets.PAT }}
